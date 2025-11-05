@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, make_response, send_from_directory
+from flask import Flask, request, jsonify, send_file, make_response, send_from_directory, Response
 from pathlib import Path
 import io
 import wave
@@ -62,62 +62,68 @@ def serve_any(filepath):
 
 @app.route('/api/process', methods=['POST', 'OPTIONS'])
 def process_audio():
+    print('[process] start')
     if request.method == 'OPTIONS':
         return ('', 204)
-    if 'audio' not in request.files:
-        return jsonify({"error": "missing 'audio' file"}), 400
-    scheme_json = request.form.get('scheme')
-    if not scheme_json:
-        return jsonify({"error": "missing 'scheme' json"}), 400
     try:
-        scheme_obj = json.loads(scheme_json)
+        if 'audio' not in request.files:
+            return jsonify({"error": "missing 'audio' file"}), 400
+        scheme_json = request.form.get('scheme')
+        if not scheme_json:
+            return jsonify({"error": "missing 'scheme' json"}), 400
+        try:
+            scheme_obj = json.loads(scheme_json)
+        except Exception as e:
+            return jsonify({"error": f"invalid scheme json: {e}"}), 400
+
+        wav_file = request.files['audio']
+        data = wav_file.read()
+        with wave.open(io.BytesIO(data), 'rb') as wf:
+            nchan = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            framerate = wf.getframerate()
+            nframes = wf.getnframes()
+            frames = wf.readframes(nframes)
+        if sampwidth != 2:
+            return jsonify({"error": "only 16-bit PCM supported"}), 400
+
+        # decode PCM16 LE
+        import struct
+        total_samples = len(frames) // 2
+        samples = struct.unpack('<' + 'h' * total_samples, frames)
+        if nchan > 1:
+            # take first channel
+            samples = samples[::nchan]
+        sig = [s / 32768.0 for s in samples]
+
+        # build EQ scheme
+        scheme = EQScheme(framerate)
+        for b in scheme_obj.get('bands', []):
+            scheme.add_band(b.get('startHz', 0), b.get('widthHz', 0), b.get('gain', 1.0))
+
+        S = stft(sig, win=1024, hop=256)
+        modifier = make_modifier_from_scheme(scheme)
+        out = istft(modifier, S, out_len=len(sig))
+        out = clamp_signal(out)
+
+        # encode back to WAV PCM16
+        out_int16 = bytearray()
+        for v in out:
+            iv = int(max(-1.0, min(1.0, v)) * 32767.0)
+            out_int16 += int(iv).to_bytes(2, byteorder='little', signed=True)
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(framerate)
+            wf.writeframes(bytes(out_int16))
+        buf.seek(0)
+        data_bytes = buf.getvalue()
+        print(f'[process] done bytes={len(data_bytes)}')
+        return Response(data_bytes, mimetype='audio/wav')
     except Exception as e:
-        return jsonify({"error": f"invalid scheme json: {e}"}), 400
-
-    wav_file = request.files['audio']
-    data = wav_file.read()
-    with wave.open(io.BytesIO(data), 'rb') as wf:
-        nchan = wf.getnchannels()
-        sampwidth = wf.getsampwidth()
-        framerate = wf.getframerate()
-        nframes = wf.getnframes()
-        frames = wf.readframes(nframes)
-    if sampwidth != 2:
-        return jsonify({"error": "only 16-bit PCM supported"}), 400
-
-    # decode PCM16 LE
-    import struct
-    total_samples = len(frames) // 2
-    samples = struct.unpack('<' + 'h' * total_samples, frames)
-    if nchan > 1:
-        # take first channel
-        samples = samples[::nchan]
-    sig = [s / 32768.0 for s in samples]
-
-    # build EQ scheme
-    scheme = EQScheme(framerate)
-    for b in scheme_obj.get('bands', []):
-        scheme.add_band(b.get('startHz', 0), b.get('widthHz', 0), b.get('gain', 1.0))
-
-    S = stft(sig, win=1024, hop=256)
-    modifier = make_modifier_from_scheme(scheme)
-    out = istft(modifier, S, out_len=len(sig))
-    out = clamp_signal(out)
-
-    # encode back to WAV PCM16
-    out_int16 = bytearray()
-    for v in out:
-        iv = int(max(-1.0, min(1.0, v)) * 32767.0)
-        out_int16 += int(iv).to_bytes(2, byteorder='little', signed=True)
-    buf = io.BytesIO()
-    with wave.open(buf, 'wb') as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(framerate)
-        wf.writeframes(bytes(out_int16))
-    buf.seek(0)
-    resp = make_response(send_file(buf, mimetype='audio/wav', as_attachment=False, download_name='processed.wav'))
-    return resp
+        print('[process] error', e)
+        return jsonify({"error": str(e)}), 500
 
 
 def _read_wav_to_mono_float(data_bytes):

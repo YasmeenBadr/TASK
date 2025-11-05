@@ -5,33 +5,66 @@ const fileInput=document.getElementById('fileInput');
 const btnGenerate=document.getElementById('btnGenerate');
 const modeSelect=document.getElementById('modeSelect');
 const scaleSelect=document.getElementById('scaleSelect');
+const magSelect=document.getElementById('magSelect');
 const btnLoadPreset=document.getElementById('btnLoadPreset');
 const btnSavePreset=document.getElementById('btnSavePreset');
 const toggleSpec=document.getElementById('toggleSpec');
 const addBand=document.getElementById('addBand');
+const applyEqBtn=document.getElementById('applyEq');
 const bandsDiv=document.getElementById('bands');
 
 const inputWave=new TimeViewer(document.getElementById('inputWave'));
 const outputWave=new TimeViewer(document.getElementById('outputWave'));
 
-const freqCanvas=document.getElementById('freqCanvas');
+const freqInCanvas=document.getElementById('freqIn');
+const freqOutCanvas=document.getElementById('freqOut');
 const inputSpec=document.getElementById('inputSpec');
 const outputSpec=document.getElementById('outputSpec');
 
 let audioCtx=null; let inputSignal=null; let sampleRate=44100; let outputSignal=null;
+let applying=false;
 let scheme=new EQScheme(sampleRate);
 let presetGroups=null; // when non-null, array of {label, windows:[{startHz,widthHz}], gain}
 
 function syncViews(start, end){ inputWave.setView(start,end); outputWave.setView(start,end); }
 
-async function updateFreqView(signal){ if(!signal) return; const blob = encodeWavPCM16Mono(signal, sampleRate); const form=new FormData(); form.append('audio', blob, 'sig.wav'); const resp=await fetch('/api/spectrum',{method:'POST', body:form}); if(!resp.ok) return; const data=await resp.json(); const mags = new Float32Array(data.magnitudes); drawSpectrum(freqCanvas, mags, data.sampleRate, scaleSelect.value); }
+// Manual apply mode: we no longer auto-apply during input changes to avoid overlapping requests
+
+async function updateFreqView(signal, which){
+  if(!signal) return; const blob = encodeWavPCM16Mono(signal, sampleRate);
+  const form=new FormData(); form.append('audio', blob, 'sig.wav');
+  const resp=await fetch('/api/spectrum',{method:'POST', body:form}); if(!resp.ok) return;
+  const data=await resp.json(); const mags = new Float32Array(data.magnitudes);
+  const target = which==='in' ? freqInCanvas : freqOutCanvas;
+  if(target) drawSpectrum(target, mags, data.sampleRate, scaleSelect.value, magSelect.value);
+}
 
 async function updateSpecs(){ if(!toggleSpec.checked){ const ctx1=inputSpec.getContext('2d'); const ctx2=outputSpec.getContext('2d'); ctx1.clearRect(0,0,inputSpec.width,inputSpec.height); ctx2.clearRect(0,0,outputSpec.width,outputSpec.height); return; }
   if(inputSignal){ const mags = await fetchSpectrogram(inputSignal, sampleRate); if(mags) drawSpectrogram(inputSpec, mags, sampleRate); }
   if(outputSignal){ const mags = await fetchSpectrogram(outputSignal, sampleRate); if(mags) drawSpectrogram(outputSpec, mags, sampleRate); }
 }
 
-async function fetchSpectrogram(signal, sr){ const blob=encodeWavPCM16Mono(signal, sr); const form=new FormData(); form.append('audio', blob, 'sig.wav'); form.append('win','1024'); form.append('hop','256'); const resp=await fetch('/api/spectrogram',{method:'POST', body:form}); if(!resp.ok) return null; const data=await resp.json(); return data.magnitudes.map(row=>Float32Array.from(row)); }
+async function updateOutputSpecOnly(){
+  if(!toggleSpec.checked) return;
+  if(outputSignal){ const mags = await fetchSpectrogram(outputSignal, sampleRate); if(mags) drawSpectrogram(outputSpec, mags, sampleRate); }
+}
+
+async function fetchSpectrogram(signal, sr){
+  const blob=encodeWavPCM16Mono(signal, sr);
+  // Choose a window that fits the signal: largest power-of-two <= length, capped at 1024
+  const maxWin = Math.min(1024, signal.length);
+  const pow = Math.floor(Math.log2(Math.max(2, maxWin)));
+  const win = 1 << pow;
+  const hop = Math.max(1, Math.floor(win/4));
+  const form=new FormData();
+  form.append('audio', blob, 'sig.wav');
+  form.append('win', String(win));
+  form.append('hop', String(hop));
+  const resp=await fetch('/api/spectrogram',{method:'POST', body:form});
+  if(!resp.ok) return null;
+  const data=await resp.json();
+  return data.magnitudes.map(row=>Float32Array.from(row));
+}
 
 function currentBandsFromState(){
   if(modeSelect.value==='generic' || !presetGroups){ return scheme.bands.map(b=>({startHz:b.startHz,widthHz:b.widthHz,gain:b.gain})) }
@@ -41,11 +74,31 @@ function currentBandsFromState(){
 }
 
 async function applyEQ(){ if(!inputSignal) return; 
+  if(applying) { console.warn('Apply EQ ignored: already running'); return; }
   const bands = currentBandsFromState();
   const blob = encodeWavPCM16Mono(inputSignal, sampleRate);
   const form = new FormData(); form.append('audio', blob, 'input.wav'); form.append('scheme', JSON.stringify({sampleRate, bands}));
-  const resp = await fetch('/api/process',{method:'POST', body:form}); if(!resp.ok) {console.error('backend process failed'); return;}
-  const arr = await resp.arrayBuffer(); await ensureAudioCtx(); const audioBuf=await audioCtx.decodeAudioData(arr); outputSignal=audioBuf.getChannelData(0).slice(); outputWave.setSignal(outputSignal, sampleRate); await updateFreqView(outputSignal); await updateSpecs(); }
+  try{
+    applying = true; if(applyEqBtn) applyEqBtn.disabled = true; console.log('Apply EQ: start', {bands});
+    const resp = await fetch('/api/process',{method:'POST', body:form});
+    if(!resp.ok){ const text = await resp.text().catch(()=>'<no body>'); console.error('Apply EQ failed', resp.status, text); return; }
+    const arr = await resp.arrayBuffer();
+    await ensureAudioCtx();
+    const audioBuf = await audioCtx.decodeAudioData(arr);
+    outputSignal = audioBuf.getChannelData(0).slice();
+    outputWave.setSignal(outputSignal, sampleRate);
+    // Keep the same time window shown as the input, so the change is visible immediately
+    syncViews(inputWave.viewStart, inputWave.viewEnd);
+    await updateFreqView(outputSignal, 'out');
+    // Defer spectrogram drawing so Apply EQ returns faster; only recompute output spectrogram
+    setTimeout(()=>{ updateOutputSpecOnly(); }, 0);
+    console.log('Apply EQ: done');
+  }catch(err){
+    console.error('Apply EQ error', err);
+  }finally{
+    applying = false; if(applyEqBtn) applyEqBtn.disabled = false;
+  }
+}
 
 function renderBands(){ bandsDiv.innerHTML='';
  if(modeSelect.value!=='generic' && presetGroups){
@@ -54,7 +107,7 @@ function renderBands(){ bandsDiv.innerHTML='';
      <label style="grid-column: span 5;">Gain 0-2<input type="range" min="0" max="2" step="0.01" value="${g.gain??1}"></label>
      <span class="gainVal">${(g.gain??1).toFixed(2)}x</span>`;
      const gainR = div.querySelector('input'); const span=div.querySelector('.gainVal');
-     gainR.addEventListener('input',()=>{g.gain=+gainR.value; span.textContent=`${g.gain.toFixed(2)}x`; applyEQ()});
+     gainR.addEventListener('input',()=>{g.gain=+gainR.value; span.textContent=`${g.gain.toFixed(2)}x`; /* manual apply only */});
      bandsDiv.appendChild(div);
    });
    return;
@@ -66,49 +119,65 @@ function renderBands(){ bandsDiv.innerHTML='';
   <span class="gainVal">${b.gain.toFixed(2)}x</span>
   <button class="remove">Remove</button>`;
   const [startL,widthL,gainR,span,btn] = div.querySelectorAll('input,span,button');
-  startL.addEventListener('input',()=>{b.startHz=+startL.value; applyEQ()});
-  widthL.addEventListener('input',()=>{b.widthHz=+widthL.value; applyEQ()});
-  gainR.addEventListener('input',()=>{b.gain=+gainR.value; span.textContent=`${b.gain.toFixed(2)}x`; applyEQ()});
-  btn.addEventListener('click',()=>{scheme.removeBand(idx); renderBands(); applyEQ()});
+  startL.addEventListener('input',()=>{b.startHz=+startL.value; /* manual apply only */});
+  widthL.addEventListener('input',()=>{b.widthHz=+widthL.value; /* manual apply only */});
+  gainR.addEventListener('input',()=>{b.gain=+gainR.value; span.textContent=`${b.gain.toFixed(2)}x`; /* manual apply only */});
+  btn.addEventListener('click',()=>{scheme.removeBand(idx); renderBands(); /* manual apply only */});
   bandsDiv.appendChild(div);
  }); }
 
-addBand.addEventListener('click',()=>{scheme.addBand(500,500,1); renderBands(); applyEQ()});
+addBand.addEventListener('click',()=>{scheme.addBand(500,500,1); renderBands(); /* manual apply */});
+
+applyEqBtn.addEventListener('click', ()=>{ applyEQ(); });
 
 btnSavePreset.addEventListener('click',()=>{ const data=JSON.stringify(scheme.toJSON(), null, 2); const blob=new Blob([data],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`scheme_${modeSelect.value}.json`; a.click(); URL.revokeObjectURL(a.href); });
 
-btnLoadPreset.addEventListener('click',()=>{ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=async ()=>{ const file=inp.files[0]; const text=await file.text(); const obj=JSON.parse(text); scheme=EQScheme.fromJSON(obj); renderBands(); applyEQ(); }; inp.click(); });
+btnLoadPreset.addEventListener('click',()=>{ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=async ()=>{ const file=inp.files[0]; const text=await file.text(); const obj=JSON.parse(text); scheme=EQScheme.fromJSON(obj); renderBands(); /* manual apply */ }; inp.click(); });
 
-scaleSelect.addEventListener('change',()=>{ updateFreqView(outputSignal||inputSignal) });
+scaleSelect.addEventListener('change',()=>{ if(inputSignal) updateFreqView(inputSignal, 'in'); if(outputSignal) updateFreqView(outputSignal, 'out'); });
+magSelect.addEventListener('change',()=>{ if(inputSignal) updateFreqView(inputSignal, 'in'); if(outputSignal) updateFreqView(outputSignal, 'out'); });
 
 toggleSpec.addEventListener('change',()=>updateSpecs());
 
 modeSelect.addEventListener('change', async ()=>{
-  if(modeSelect.value==='generic'){ presetGroups=null; renderBands(); applyEQ(); return; }
+  if(modeSelect.value==='generic'){ presetGroups=null; renderBands(); /* manual apply */ return; }
   try{
     const resp = await fetch('./presets.json');
     const data = await resp.json();
     const p = data[modeSelect.value];
     presetGroups = (p?.sliders||[]).map(s=>({label:s.label, windows:s.windows||[], gain:1}));
   }catch(e){ console.error(e); presetGroups=null; }
-  renderBands(); applyEQ();
+  renderBands(); /* manual apply */
 });
 
 fileInput.addEventListener('change', async ()=>{
-  const file=fileInput.files[0]; if(!file) return; await ensureAudioCtx(); const arrBuf=await file.arrayBuffer(); const audioBuf=await audioCtx.decodeAudioData(arrBuf); sampleRate=audioBuf.sampleRate; inputSignal=audioBuf.getChannelData(0).slice(); inputWave.setSignal(inputSignal, sampleRate); outputSignal=inputSignal.slice(); outputWave.setSignal(outputSignal, sampleRate); syncViews(0, Math.min(2, inputSignal.length/sampleRate)); await updateFreqView(inputSignal); await updateSpecs(); await applyEQ(); });
+  const file=fileInput.files[0]; if(!file) return; await ensureAudioCtx(); const arrBuf=await file.arrayBuffer(); const audioBuf=await audioCtx.decodeAudioData(arrBuf); sampleRate=audioBuf.sampleRate; inputSignal=audioBuf.getChannelData(0).slice(); inputWave.setSignal(inputSignal, sampleRate); outputSignal=inputSignal.slice(); outputWave.setSignal(outputSignal, sampleRate); syncViews(0, Math.min(2, inputSignal.length/sampleRate)); await updateFreqView(inputSignal, 'in'); await updateFreqView(outputSignal, 'out'); await updateSpecs(); await applyEQ(); });
 
 btnGenerate.addEventListener('click',async ()=>{
-  const dur=5; sampleRate=44100; const N=dur*sampleRate; inputSignal=new Float32Array(N); const tones=[120,440,880,1500,3000,6000,10000]; for(const f of tones){ for(let n=0;n<N;n++){ inputSignal[n]+=0.2*Math.sin(2*Math.PI*f*n/sampleRate); } } const max=Math.max(...inputSignal.map? inputSignal.map(v=>Math.abs(v)) : Array.from(inputSignal, v=>Math.abs(v))); if(max>1e-6){ for(let n=0;n<N;n++) inputSignal[n]/=max; }
-  inputWave.setSignal(inputSignal, sampleRate); outputSignal=inputSignal.slice(); outputWave.setSignal(outputSignal, sampleRate); syncViews(0,2); await updateFreqView(inputSignal); await updateSpecs(); await applyEQ(); });
+  const dur=5; sampleRate=44100; const N=dur*sampleRate; inputSignal=new Float32Array(N); const tones=[120,440,880,1500,3000,6000,10000];
+  for(const f of tones){ for(let n=0;n<N;n++){ inputSignal[n]+=0.2*Math.sin(2*Math.PI*f*n/sampleRate); } }
+  let max=0; for(let n=0;n<N;n++){ const a=Math.abs(inputSignal[n]); if(a>max) max=a; }
+  if(max>1e-6){ for(let n=0;n<N;n++) inputSignal[n]/=max; }
+  inputWave.setSignal(inputSignal, sampleRate); outputSignal=inputSignal.slice(); outputWave.setSignal(outputSignal, sampleRate); syncViews(0,2); await updateFreqView(inputSignal, 'in'); await updateFreqView(outputSignal, 'out'); await updateSpecs(); await applyEQ(); });
 
 // Playback controls (simple): create BufferSource per play
 let inSource=null, outSource=null;
-async function ensureAudioCtx(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }
+async function ensureAudioCtx(){
+  if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==='suspended') await audioCtx.resume();
+}
 
-function playBuffer(signal, rate, which){ const ctx=audioCtx; const buf=ctx.createBuffer(1, signal.length, sampleRate); buf.copyToChannel(signal,0,0); const src=ctx.createBufferSource(); src.buffer=buf; src.playbackRate.value=rate; src.connect(ctx.destination); src.start(); return src; }
+function playBuffer(signal, rate, which){
+  const ctx=audioCtx; const buf=ctx.createBuffer(1, signal.length, sampleRate);
+  buf.copyToChannel(signal,0,0);
+  const src=ctx.createBufferSource();
+  src.buffer=buf; src.playbackRate.value=rate; src.connect(ctx.destination); src.start();
+  src.onended = ()=>{ if(which==='in'){ inSource=null; } else { outSource=null; } };
+  return src;
+}
 
-document.getElementById('inPlay').addEventListener('click', async ()=>{ await ensureAudioCtx(); if(inSource) inSource.stop(); inSource=playBuffer(inputSignal||new Float32Array([0]), +document.getElementById('inSpeed').value, 'in'); });
-document.getElementById('outPlay').addEventListener('click', async ()=>{ await ensureAudioCtx(); if(outSource) outSource.stop(); outSource=playBuffer(outputSignal||new Float32Array([0]), +document.getElementById('outSpeed').value, 'out'); });
+document.getElementById('inPlay').addEventListener('click', async ()=>{ await ensureAudioCtx(); if(inSource){ try{inSource.stop()}catch(_){} } inSource=playBuffer(inputSignal||new Float32Array([0]), +document.getElementById('inSpeed').value, 'in'); });
+document.getElementById('outPlay').addEventListener('click', async ()=>{ await ensureAudioCtx(); if(outSource){ try{outSource.stop()}catch(_){} } outSource=playBuffer(outputSignal||new Float32Array([0]), +document.getElementById('outSpeed').value, 'out'); });
 
 document.getElementById('inPause').addEventListener('click', ()=>{ if(audioCtx) audioCtx.suspend(); });
 document.getElementById('outPause').addEventListener('click', ()=>{ if(audioCtx) audioCtx.suspend(); });
