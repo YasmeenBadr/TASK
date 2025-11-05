@@ -9,6 +9,7 @@ const magSelect=document.getElementById('magSelect');
 const btnLoadPreset=document.getElementById('btnLoadPreset');
 const btnSavePreset=document.getElementById('btnSavePreset');
 const toggleSpec=document.getElementById('toggleSpec');
+const toggleSpecGlobal=document.getElementById('toggleSpecGlobal');
 const addBand=document.getElementById('addBand');
 const applyEqBtn=document.getElementById('applyEq');
 const bandsDiv=document.getElementById('bands');
@@ -39,13 +40,14 @@ async function updateFreqView(signal, which){
   if(target) drawSpectrum(target, mags, data.sampleRate, scaleSelect.value, magSelect.value);
 }
 
-async function updateSpecs(){ if(!toggleSpec.checked){ const ctx1=inputSpec.getContext('2d'); const ctx2=outputSpec.getContext('2d'); ctx1.clearRect(0,0,inputSpec.width,inputSpec.height); ctx2.clearRect(0,0,outputSpec.width,outputSpec.height); return; }
+async function updateSpecs(){ if(!(toggleSpecGlobal?.checked)&&toggleSpecGlobal!==null){ const ctx1=inputSpec.getContext('2d'); const ctx2=outputSpec.getContext('2d'); ctx1.clearRect(0,0,inputSpec.width,inputSpec.height); ctx2.clearRect(0,0,outputSpec.width,outputSpec.height); return; } if(toggleSpec && !toggleSpec.checked){ const ctx1=inputSpec.getContext('2d'); const ctx2=outputSpec.getContext('2d'); ctx1.clearRect(0,0,inputSpec.width,inputSpec.height); ctx2.clearRect(0,0,outputSpec.width,outputSpec.height); return; }
   if(inputSignal){ const mags = await fetchSpectrogram(inputSignal, sampleRate); if(mags) drawSpectrogram(inputSpec, mags, sampleRate); }
   if(outputSignal){ const mags = await fetchSpectrogram(outputSignal, sampleRate); if(mags) drawSpectrogram(outputSpec, mags, sampleRate); }
 }
 
 async function updateOutputSpecOnly(){
-  if(!toggleSpec.checked) return;
+  if(!(toggleSpecGlobal?.checked)&&toggleSpecGlobal!==null) return;
+  if(toggleSpec && !toggleSpec.checked) return;
   if(outputSignal){ const mags = await fetchSpectrogram(outputSignal, sampleRate); if(mags) drawSpectrogram(outputSpec, mags, sampleRate); }
 }
 
@@ -137,7 +139,19 @@ btnLoadPreset.addEventListener('click',()=>{ const inp=document.createElement('i
 scaleSelect.addEventListener('change',()=>{ if(inputSignal) updateFreqView(inputSignal, 'in'); if(outputSignal) updateFreqView(outputSignal, 'out'); });
 magSelect.addEventListener('change',()=>{ if(inputSignal) updateFreqView(inputSignal, 'in'); if(outputSignal) updateFreqView(outputSignal, 'out'); });
 
-toggleSpec.addEventListener('change',()=>updateSpecs());
+if(toggleSpec){ toggleSpec.addEventListener('change',()=>updateSpecs()); }
+if(toggleSpecGlobal){
+  toggleSpecGlobal.addEventListener('change', ()=>{
+    if(!toggleSpecGlobal.checked){
+      const ctx1=inputSpec.getContext('2d'); const ctx2=outputSpec.getContext('2d');
+      ctx1.clearRect(0,0,inputSpec.width,inputSpec.height);
+      ctx2.clearRect(0,0,outputSpec.width,outputSpec.height);
+    }else{
+      // Refresh specs on re-enable
+      updateSpecs();
+    }
+  });
+}
 
 modeSelect.addEventListener('change', async ()=>{
   if(modeSelect.value==='generic'){ presetGroups=null; renderBands(); /* manual apply */ return; }
@@ -204,4 +218,3 @@ function encodeWavPCM16Mono(samples, sr){
   return new Blob([buf], {type:'audio/wav'});
 }
 
-// removed backend WAV encode helper (no longer needed)

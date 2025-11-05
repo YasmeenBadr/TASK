@@ -3,81 +3,189 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Signal Equalizer</title>
-  <link rel="stylesheet" href="./style.css" />
+  <title>Spectrograms Show</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <h1>Signal Equalizer</h1>
-    <div class="toolbar">
-      <label>Load WAV <input id="fileInput" type="file" accept="audio/wav,audio/wave" /></label>
-      <button id="btnGenerate">Generate Synthetic</button>
-      <label>Mode
-        <select id="modeSelect">
-          <option value="generic">Generic</option>
-          <option value="music">Musical Instruments</option>
-          <option value="animals">Animal Sounds</option>
-          <option value="voices">Human Voices</option>
-        </select>
-      </label>
-      <label>Freq Scale
-        <select id="scaleSelect">
-          <option value="linear">Linear</option>
-          <option value="audiogram">Audiogram</option>
-        </select>
-      </label>
-      <label>Mag Scale
-        <select id="magSelect">
-          <option value="linear">Linear</option>
-          <option value="db">dB</option>
-        </select>
-      </label>
-      <button id="btnLoadPreset">Load Scheme</button>
-      <button id="btnSavePreset">Save Scheme</button>
-    </div>
-  </header>
-
-  <main>
-    <section class="panels">
-      <div class="panel">
-        <h2>Input Signal</h2>
-        <div class="controls">
-          <button id="inPlay">Play</button>
-          <button id="inPause">Pause</button>
-          <button id="inStop">Stop</button>
-          <label>Speed <input id="inSpeed" type="range" min="0.25" max="2" step="0.05" value="1" /></label>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-content">
+        <div class="logo">
+          <i class="fas fa-wave-square"></i>
+          <h1>Spectrograms Show</h1>
         </div>
-        <canvas id="inputWave" width="1000" height="150"></canvas>
-        <h2>Input Frequency</h2>
-        <canvas id="freqIn" width="1000" height="200"></canvas>
-        <h2>Input Spectrogram <label><input type="checkbox" id="toggleSpec" checked /> Show</label></h2>
-        <canvas id="inputSpec" width="1000" height="200"></canvas>
-      </div>
-      <div class="panel">
-        <h2>Output Signal</h2>
-        <div class="controls">
-          <button id="outPlay">Play</button>
-          <button id="outPause">Pause</button>
-          <button id="outStop">Stop</button>
-          <label>Speed <input id="outSpeed" type="range" min="0.25" max="2" step="0.05" value="1" /></label>
+        <div class="toolbar">
+          <div class="toolbar-group">
+            <label class="file-input-wrapper">
+              <i class="fas fa-file-audio"></i>
+              Load WAV
+              <input id="fileInput" type="file" accept="audio/wav,audio/wave" />
+            </label>
+            <button id="btnGenerate" class="btn-primary">
+              <i class="fas fa-bolt"></i>
+              Generate Synthetic
+            </button>
+          </div>
+          
+          <div class="toolbar-group">
+            <div class="select-wrapper">
+              <i class="fas fa-sliders-h"></i>
+              <select id="modeSelect">
+                <option value="generic">Generic</option>
+                <option value="music">Musical Instruments</option>
+                <option value="animals">Animal Sounds</option>
+                <option value="voices">Human Voices</option>
+              </select>
+            </div>
+            
+            <div class="select-wrapper">
+              <i class="fas fa-chart-line"></i>
+              <select id="scaleSelect">
+                <option value="linear">Linear</option>
+                <option value="audiogram">Audiogram</option>
+              </select>
+            </div>
+            
+            <div class="select-wrapper">
+              <i class="fas fa-signal"></i>
+              <select id="magSelect">
+                <option value="linear">Linear</option>
+                <option value="db">dB</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="toolbar-group">
+            <label class="toggle-switch">
+              <input type="checkbox" id="toggleSpecGlobal" checked />
+              <span class="slider"></span>
+              <span class="toggle-label">Spectrograms</span>
+            </label>
+            
+            <button id="btnLoadPreset" class="btn-secondary">
+              <i class="fas fa-folder-open"></i>
+              Load
+            </button>
+            <button id="btnSavePreset" class="btn-secondary">
+              <i class="fas fa-save"></i>
+              Save
+            </button>
+          </div>
         </div>
-        <canvas id="outputWave" width="1000" height="150"></canvas>
-        <h2>Output Frequency</h2>
-        <canvas id="freqOut" width="1000" height="200"></canvas>
-        <h2>Output Spectrogram</h2>
-        <canvas id="outputSpec" width="1000" height="200"></canvas>
       </div>
-    </section>
+    </header>
 
-    <section class="panel">
-      <h2>Equalizer</h2>
-      <div id="eqControls" class="eq-controls">
-        <button id="addBand">Add Subdivision</button>
-        <button id="applyEq">Apply EQ</button>
-        <div id="bands"></div>
-      </div>
-    </section>
-  </main>
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Signal Visualization Panels -->
+      <section class="visualization-section">
+        <div class="visualization-panel input-panel">
+          <div class="panel-header">
+            <h2><i class="fas fa-arrow-down"></i> Input Signal</h2>
+            <div class="playback-controls">
+              <div class="control-group">
+                <button id="inPlay" class="btn-control play">
+                  <i class="fas fa-play"></i>
+                </button>
+                <button id="inPause" class="btn-control pause">
+                  <i class="fas fa-pause"></i>
+                </button>
+                <button id="inStop" class="btn-control stop">
+                  <i class="fas fa-stop"></i>
+                </button>
+              </div>
+              <div class="speed-control">
+                <i class="fas fa-tachometer-alt"></i>
+                <input id="inSpeed" type="range" min="0.25" max="2" step="0.05" value="1" />
+                <span class="speed-value">1.0x</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="visualization-container">
+            <div class="canvas-wrapper">
+              <canvas id="inputWave" width="1000" height="240"></canvas>
+            </div>
+            <div class="canvas-wrapper">
+              <h3>Frequency Spectrum</h3>
+              <canvas id="freqIn" width="1000" height="200"></canvas>
+            </div>
+            <div class="canvas-wrapper">
+              <div class="canvas-header">
+                <h3>Spectrogram</h3>
+              </div>
+              <canvas id="inputSpec" width="1000" height="200"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="visualization-panel output-panel">
+          <div class="panel-header">
+            <h2><i class="fas fa-arrow-up"></i> Output Signal</h2>
+            <div class="playback-controls">
+              <div class="control-group">
+                <button id="outPlay" class="btn-control play">
+                  <i class="fas fa-play"></i>
+                </button>
+                <button id="outPause" class="btn-control pause">
+                  <i class="fas fa-pause"></i>
+                </button>
+                <button id="outStop" class="btn-control stop">
+                  <i class="fas fa-stop"></i>
+                </button>
+              </div>
+              <div class="speed-control">
+                <i class="fas fa-tachometer-alt"></i>
+                <input id="outSpeed" type="range" min="0.25" max="2" step="0.05" value="1" />
+                <span class="speed-value">1.0x</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="visualization-container">
+            <div class="canvas-wrapper">
+              <canvas id="outputWave" width="1000" height="240"></canvas>
+            </div>
+            <div class="canvas-wrapper">
+              <h3>Frequency Spectrum</h3>
+              <canvas id="freqOut" width="1000" height="200"></canvas>
+            </div>
+            <div class="canvas-wrapper">
+              <h3>Spectrogram</h3>
+              <canvas id="outputSpec" width="1000" height="200"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Equalizer Controls at Bottom -->
+      <section class="equalizer-section">
+        <div class="eq-header">
+          <h2><i class="fas fa-sliders-h"></i> Equalizer Controls</h2>
+          <div class="eq-actions">
+            <button id="addBand" class="btn-primary">
+              <i class="fas fa-plus"></i>
+              Add Subdivision
+            </button>
+            <button id="applyEq" class="btn-apply">
+              <i class="fas fa-magic"></i>
+              Apply EQ
+            </button>
+          </div>
+        </div>
+        
+        <div class="bands-container" id="bands">
+          <!-- Bands will be dynamically inserted here -->
+          <div class="empty-state">
+            <i class="fas fa-sliders-h"></i>
+            <p>No subdivisions added yet. Click "Add Subdivision" to start.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script type="module" src="./js/app.js"></script>
 </body>

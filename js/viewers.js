@@ -1,9 +1,9 @@
 // Simple linked viewers and drawing utilities
 export class TimeViewer{
   constructor(canvas){this.canvas=canvas; this.ctx=canvas.getContext('2d'); this.viewStart=0; this.viewEnd=1; this.signal=null; this.sampleRate=44100}
-  setSignal(sig, sr){this.signal=sig; this.sampleRate=sr; this.viewStart=0; this.viewEnd=Math.min(1, sig.length/sr)}
+  setSignal(sig, sr){this.signal=sig; this.sampleRate=sr; this.viewStart=0; this.viewEnd=Math.min(0.5, sig.length/sr)}
   setView(start,end){this.viewStart=Math.max(0,start); this.viewEnd=Math.max(this.viewStart+0.01,end); this.draw()}
-  draw(){const ctx=this.ctx, c=this.canvas; ctx.clearRect(0,0,c.width,c.height); if(!this.signal) return; const s=this.signal; const sr=this.sampleRate; const t0=this.viewStart, t1=this.viewEnd; const i0=Math.floor(t0*sr), i1=Math.min(s.length-1, Math.ceil(t1*sr)); const span=i1-i0; ctx.strokeStyle="#60a5fa"; ctx.beginPath(); for(let x=0;x<c.width;x++){ const idx=i0+Math.floor(span*x/c.width); const y=(0.5-0.45*(s[idx]||0))*c.height; if(x===0) ctx.moveTo(0,y); else ctx.lineTo(x,y);} ctx.stroke();}
+  draw(){const ctx=this.ctx, c=this.canvas; ctx.clearRect(0,0,c.width,c.height); if(!this.signal) return; const s=this.signal; const sr=this.sampleRate; const t0=this.viewStart, t1=this.viewEnd; const i0=Math.floor(t0*sr), i1=Math.min(s.length-1, Math.ceil(t1*sr)); const span=i1-i0; ctx.strokeStyle="#60a5fa"; ctx.lineWidth=1.5; ctx.beginPath(); for(let x=0;x<c.width;x++){ const idx=i0+Math.floor(span*x/c.width); const y=(0.5-0.45*(s[idx]||0))*c.height; if(x===0) ctx.moveTo(0,y); else ctx.lineTo(x,y);} ctx.stroke();}
 }
 
 export function drawSpectrum(canvas, magnitudes, sampleRate, scale, magScale='linear'){
@@ -32,6 +32,34 @@ export function drawSpectrum(canvas, magnitudes, sampleRate, scale, magScale='li
     const m=normVals[i]; const y = (1-m)*h; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
   ctx.stroke();
+
+  // Draw frequency axis ticks and labels
+  const nyq = sampleRate/2;
+  const baseTicks = [0,100,200,500,1000,2000,5000,10000,15000,20000].filter(f=>f<=nyq);
+  ctx.save();
+  ctx.strokeStyle = '#374151';
+  ctx.fillStyle = '#9ca3af';
+  ctx.lineWidth = 1;
+  // baseline
+  ctx.beginPath();
+  ctx.moveTo(0, h-0.5);
+  ctx.lineTo(w, h-0.5);
+  ctx.stroke();
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  baseTicks.forEach(f=>{
+    const x = scale==='audiogram' ? audiogramX(f, sampleRate, w) : (f/nyq)*w;
+    // tick
+    ctx.beginPath();
+    ctx.moveTo(x+0.5, h-8);
+    ctx.lineTo(x+0.5, h);
+    ctx.stroke();
+    // label
+    const label = (f>=1000) ? `${(f/1000)}k` : `${f}`;
+    ctx.fillText(label, x, h-10);
+  });
+  ctx.restore();
 }
 
 export function drawSpectrogram(canvas, spec, sampleRate){
