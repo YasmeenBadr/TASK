@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Signal Equalizer</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>Signal Equalizer</h1>
+    <div class="toolbar">
+      <label>Load WAV <input id="fileInput" type="file" accept="audio/wav,audio/wave" /></label>
+      <button id="btnGenerate">Generate Synthetic</button>
+      <label>Mode
+        <select id="modeSelect">
+          <option value="generic">Generic</option>
+          <option value="music">Musical Instruments</option>
+          <option value="animals">Animal Sounds</option>
+          <option value="voices">Human Voices</option>
+        </select>
+      </label>
+      <label>Freq Scale
+        <select id="scaleSelect">
+          <option value="linear">Linear</option>
+          <option value="audiogram">Audiogram</option>
+        </select>
+      </label>
+      <button id="btnLoadPreset">Load Scheme</button>
+      <button id="btnSavePreset">Save Scheme</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panels">
+      <div class="panel">
+        <h2>Input Signal</h2>
+        <div class="controls">
+          <button id="inPlay">Play</button>
+          <button id="inPause">Pause</button>
+          <button id="inStop">Stop</button>
+          <label>Speed <input id="inSpeed" type="range" min="0.25" max="2" step="0.05" value="1" /></label>
+        </div>
+        <canvas id="inputWave" width="1000" height="150"></canvas>
+      </div>
+      <div class="panel">
+        <h2>Output Signal</h2>
+        <div class="controls">
+          <button id="outPlay">Play</button>
+          <button id="outPause">Pause</button>
+          <button id="outStop">Stop</button>
+          <label>Speed <input id="outSpeed" type="range" min="0.25" max="2" step="0.05" value="1" /></label>
+        </div>
+        <canvas id="outputWave" width="1000" height="150"></canvas>
+      </div>
+    </section>
+
+    <section class="panels">
+      <div class="panel">
+        <h2>Frequency Domain</h2>
+        <canvas id="freqCanvas" width="1000" height="200"></canvas>
+      </div>
+      <div class="panel">
+        <h2>Spectrograms <label><input type="checkbox" id="toggleSpec" checked /> Show</label></h2>
+        <div class="specs">
+          <canvas id="inputSpec" width="500" height="200"></canvas>
+          <canvas id="outputSpec" width="500" height="200"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Equalizer</h2>
+      <div id="eqControls" class="eq-controls">
+        <button id="addBand">Add Subdivision</button>
+        <div id="bands"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

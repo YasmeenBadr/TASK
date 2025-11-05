@@ -1,0 +1,26 @@
+{
+  "music": {
+    "sliders": [
+      {"label": "Kick/Bass", "windows": [{"startHz": 40, "widthHz": 120}]},
+      {"label": "Snare/Mids", "windows": [{"startHz": 200, "widthHz": 400}]},
+      {"label": "Guitar/Piano", "windows": [{"startHz": 500, "widthHz": 1500}]},
+      {"label": "Vocals/Lead", "windows": [{"startHz": 1500, "widthHz": 3500}]}
+    ]
+  },
+  "animals": {
+    "sliders": [
+      {"label": "Dog", "windows": [{"startHz": 500, "widthHz": 2000}]},
+      {"label": "Cat", "windows": [{"startHz": 700, "widthHz": 2000}]},
+      {"label": "Bird", "windows": [{"startHz": 3000, "widthHz": 6000}]},
+      {"label": "Cow", "windows": [{"startHz": 80, "widthHz": 200}]}
+    ]
+  },
+  "voices": {
+    "sliders": [
+      {"label": "Male Low", "windows": [{"startHz": 85, "widthHz": 120}]},
+      {"label": "Female Mid", "windows": [{"startHz": 165, "widthHz": 250}]},
+      {"label": "Sibilance", "windows": [{"startHz": 5000, "widthHz": 4000}]},
+      {"label": "Formants", "windows": [{"startHz": 500, "widthHz": 2000}]}
+    ]
+  }
+}
