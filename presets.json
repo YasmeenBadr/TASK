@@ -1,18 +1,21 @@
 {
+  "generic": {
+    "sliders": []
+  },
   "music": {
     "sliders": [
       {"label": "Guitar", "windows": [{"startHz": 40, "widthHz": 360}]},
-      {"label": "Flute",  "windows": [{"startHz": 400, "widthHz": 400}]},
+      {"label": "Flute", "windows": [{"startHz": 400, "widthHz": 400}]},
       {"label": "Violin", "windows": [{"startHz": 950, "widthHz": 3050}]},
       {"label": "Xylophone", "windows": [{"startHz": 5000, "widthHz": 9000}]}
     ]
   },
   "animals": {
     "sliders": [
-      {"label": "Dog", "windows": [{"startHz": 500, "widthHz": 2000}]},
-      {"label": "Cat", "windows": [{"startHz": 700, "widthHz": 2000}]},
-      {"label": "Bird", "windows": [{"startHz": 3000, "widthHz": 6000}]},
-      {"label": "Cow", "windows": [{"startHz": 80, "widthHz": 200}]}
+      {"label": "Dog", "windows": [{"startHz": 0, "widthHz": 450}]},
+      {"label": "Wolf", "windows": [{"startHz": 450, "widthHz": 650}]},
+      {"label": "Crow", "windows": [{"startHz": 1100, "widthHz": 1900}]},
+      {"label": "Bat", "windows": [{"startHz": 3000, "widthHz": 6000}]}
     ]
   },
   "voices": {
