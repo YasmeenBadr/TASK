@@ -26,6 +26,7 @@ let audioCtx=null; let inputSignal=null; let sampleRate=44100; let outputSignal=
 let applying=false;
 let scheme=new EQScheme(sampleRate);
 let presetGroups=null; // when non-null, array of {label, windows:[{startHz,widthHz}], gain}
+let applyTimer=null;
 
 function syncViews(start, end){ inputWave.setView(start,end); outputWave.setView(start,end); }
 
@@ -69,10 +70,19 @@ async function fetchSpectrogram(signal, sr){
 }
 
 function currentBandsFromState(){
-  if(modeSelect.value==='generic' || !presetGroups){ return scheme.bands.map(b=>({startHz:b.startHz,widthHz:b.widthHz,gain:b.gain})) }
-  const bands=[]; // expand preset groups
-  for(const g of presetGroups){ for(const w of g.windows){ bands.push({startHz:w.startHz,widthHz:w.widthHz,gain:g.gain??1}) } }
-  return bands;
+  // If we have grouped presets loaded (e.g., Musical Instruments), expand them to bands
+  if(presetGroups && presetGroups.length){
+    const bands=[];
+    for(const g of presetGroups){
+      const gain = (typeof g.gain === 'number') ? g.gain : 1;
+      for(const w of (g.windows||[])){
+        bands.push({startHz:w.startHz, widthHz:w.widthHz, gain});
+      }
+    }
+    return bands;
+  }
+  // Fallback: generic mode uses manual scheme bands
+  return scheme.bands.map(b=>({startHz:b.startHz, widthHz:b.widthHz, gain:b.gain}));
 }
 
 async function applyEQ(){ if(!inputSignal) return; 
@@ -102,14 +112,20 @@ async function applyEQ(){ if(!inputSignal) return;
   }
 }
 
+// Debounced auto-apply to keep UI responsive while editing sliders
+function scheduleApply(){
+  if(applyTimer) clearTimeout(applyTimer);
+  applyTimer = setTimeout(()=>{ applyEQ(); }, 250);
+}
+
 function renderBands(){ bandsDiv.innerHTML='';
- if(modeSelect.value!=='generic' && presetGroups){
+ if(presetGroups && presetGroups.length){
    presetGroups.forEach((g,idx)=>{ const div=document.createElement('div'); div.className='band';
      div.innerHTML=`<strong style="grid-column: span 1; color:#e5e7eb">${g.label||('Group '+(idx+1))}</strong>
      <label style="grid-column: span 5;">Gain 0-2<input type="range" min="0" max="2" step="0.01" value="${g.gain??1}"></label>
      <span class="gainVal">${(g.gain??1).toFixed(2)}x</span>`;
      const gainR = div.querySelector('input'); const span=div.querySelector('.gainVal');
-     gainR.addEventListener('input',()=>{g.gain=+gainR.value; span.textContent=`${g.gain.toFixed(2)}x`; /* manual apply only */});
+     gainR.addEventListener('input',()=>{g.gain=+gainR.value; span.textContent=`${g.gain.toFixed(2)}x`; scheduleApply();});
      bandsDiv.appendChild(div);
    });
    return;
@@ -121,20 +137,32 @@ function renderBands(){ bandsDiv.innerHTML='';
   <span class="gainVal">${b.gain.toFixed(2)}x</span>
   <button class="remove">Remove</button>`;
   const [startL,widthL,gainR,span,btn] = div.querySelectorAll('input,span,button');
-  startL.addEventListener('input',()=>{b.startHz=+startL.value; /* manual apply only */});
-  widthL.addEventListener('input',()=>{b.widthHz=+widthL.value; /* manual apply only */});
-  gainR.addEventListener('input',()=>{b.gain=+gainR.value; span.textContent=`${b.gain.toFixed(2)}x`; /* manual apply only */});
-  btn.addEventListener('click',()=>{scheme.removeBand(idx); renderBands(); /* manual apply only */});
+  startL.addEventListener('input',()=>{b.startHz=+startL.value; scheduleApply();});
+  widthL.addEventListener('input',()=>{b.widthHz=+widthL.value; scheduleApply();});
+  gainR.addEventListener('input',()=>{b.gain=+gainR.value; span.textContent=`${b.gain.toFixed(2)}x`; scheduleApply();});
+  btn.addEventListener('click',()=>{scheme.removeBand(idx); renderBands(); scheduleApply();});
   bandsDiv.appendChild(div);
  }); }
+
+function updateModeUI(){
+  if(addBand){
+    if(modeSelect.value==='generic'){
+      addBand.style.display='inline-flex';
+      addBand.disabled=false;
+    }else{
+      addBand.style.display='none';
+      addBand.disabled=true;
+    }
+  }
+}
 
 addBand.addEventListener('click',()=>{scheme.addBand(500,500,1); renderBands(); /* manual apply */});
 
 applyEqBtn.addEventListener('click', ()=>{ applyEQ(); });
 
-btnSavePreset.addEventListener('click',()=>{ const data=JSON.stringify(scheme.toJSON(), null, 2); const blob=new Blob([data],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`scheme_${modeSelect.value}.json`; a.click(); URL.revokeObjectURL(a.href); });
+btnSavePreset.addEventListener('click',()=>{ let dataObj=null; if(modeSelect.value==='generic'){ dataObj=scheme.toJSON(); } else { dataObj={ sliders:(presetGroups||[]).map(g=>({label:g.label, windows:g.windows, gain:g.gain})) }; } const data=JSON.stringify(dataObj, null, 2); const blob=new Blob([data],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`preset_${modeSelect.value}.json`; a.click(); URL.revokeObjectURL(a.href); });
 
-btnLoadPreset.addEventListener('click',()=>{ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=async ()=>{ const file=inp.files[0]; const text=await file.text(); const obj=JSON.parse(text); scheme=EQScheme.fromJSON(obj); renderBands(); /* manual apply */ }; inp.click(); });
+btnLoadPreset.addEventListener('click',()=>{ const inp=document.createElement('input'); inp.type='file'; inp.accept='application/json'; inp.onchange=async ()=>{ const file=inp.files[0]; if(!file) return; const text=await file.text(); const obj=JSON.parse(text); if(modeSelect.value==='generic'){ scheme=EQScheme.fromJSON(obj); } else { const s=(obj&&obj.sliders)||[]; presetGroups=s.map(x=>({label:x.label, windows:x.windows||[], gain:typeof x.gain==='number'?x.gain:1})); } renderBands(); }; inp.click(); });
 
 scaleSelect.addEventListener('change',()=>{ if(inputSignal) updateFreqView(inputSignal, 'in'); if(outputSignal) updateFreqView(outputSignal, 'out'); });
 magSelect.addEventListener('change',()=>{ if(inputSignal) updateFreqView(inputSignal, 'in'); if(outputSignal) updateFreqView(outputSignal, 'out'); });
@@ -154,22 +182,28 @@ if(toggleSpecGlobal){
 }
 
 modeSelect.addEventListener('change', async ()=>{
-  if(modeSelect.value==='generic'){ presetGroups=null; renderBands(); /* manual apply */ return; }
+  if(modeSelect.value==='generic'){ presetGroups=null; renderBands(); updateModeUI(); if(inputSignal) scheduleApply(); return; }
   try{
     const resp = await fetch('./presets.json');
     const data = await resp.json();
     const p = data[modeSelect.value];
     presetGroups = (p?.sliders||[]).map(s=>({label:s.label, windows:s.windows||[], gain:1}));
   }catch(e){ console.error(e); presetGroups=null; }
-  renderBands(); /* manual apply */
+  renderBands(); updateModeUI(); if(inputSignal) scheduleApply();
 });
 
 fileInput.addEventListener('change', async ()=>{
   const file=fileInput.files[0]; if(!file) return; await ensureAudioCtx(); const arrBuf=await file.arrayBuffer(); const audioBuf=await audioCtx.decodeAudioData(arrBuf); sampleRate=audioBuf.sampleRate; inputSignal=audioBuf.getChannelData(0).slice(); inputWave.setSignal(inputSignal, sampleRate); outputSignal=inputSignal.slice(); outputWave.setSignal(outputSignal, sampleRate); syncViews(0, Math.min(2, inputSignal.length/sampleRate)); await updateFreqView(inputSignal, 'in'); await updateFreqView(outputSignal, 'out'); await updateSpecs(); await applyEQ(); });
 
 btnGenerate.addEventListener('click',async ()=>{
-  const dur=5; sampleRate=44100; const N=dur*sampleRate; inputSignal=new Float32Array(N); const tones=[120,440,880,1500,3000,6000,10000];
-  for(const f of tones){ for(let n=0;n<N;n++){ inputSignal[n]+=0.2*Math.sin(2*Math.PI*f*n/sampleRate); } }
+  const dur=5; sampleRate=44100; const N=dur*sampleRate; inputSignal=new Float32Array(N);
+  if(modeSelect.value!=='generic' && presetGroups && presetGroups.length){
+    const parts=[]; presetGroups.forEach((g)=>{ (g.windows||[]).forEach((w)=>{ const center=Math.max(20, w.startHz + Math.max(0.0,w.widthHz)*0.5); parts.push(center); }); });
+    const amp=0.9/Math.max(1, parts.length);
+    for(const f of parts){ for(let n=0;n<N;n++){ inputSignal[n]+=amp*Math.sin(2*Math.PI*f*n/sampleRate); } }
+  } else {
+    const tones=[120,440,880,1500,3000,6000,10000]; const amp=1/tones.length; for(const f of tones){ for(let n=0;n<N;n++){ inputSignal[n]+=amp*Math.sin(2*Math.PI*f*n/sampleRate); } }
+  }
   let max=0; for(let n=0;n<N;n++){ const a=Math.abs(inputSignal[n]); if(a>max) max=a; }
   if(max>1e-6){ for(let n=0;n<N;n++) inputSignal[n]/=max; }
   inputWave.setSignal(inputSignal, sampleRate); outputSignal=inputSignal.slice(); outputWave.setSignal(outputSignal, sampleRate); syncViews(0,2); await updateFreqView(inputSignal, 'in'); await updateFreqView(outputSignal, 'out'); await updateSpecs(); await applyEQ(); });
@@ -207,7 +241,7 @@ document.getElementById('outStop').addEventListener('click', ()=>{ if(outSource)
 });
 
 // Initial state
-renderBands();
+renderBands(); updateModeUI();
 
 // Helpers: WAV encoder PCM16 mono
 function encodeWavPCM16Mono(samples, sr){

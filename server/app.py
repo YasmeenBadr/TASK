@@ -97,8 +97,12 @@ def process_audio():
         sig = [s / 32768.0 for s in samples]
 
         # build EQ scheme
+        bands_in = scheme_obj.get('bands', [])
+        print(f"[process] bands received: {len(bands_in)}")
+        if bands_in[:3]:
+            print('[process] first bands sample:', bands_in[:3])
         scheme = EQScheme(framerate)
-        for b in scheme_obj.get('bands', []):
+        for b in bands_in:
             scheme.add_band(b.get('startHz', 0), b.get('widthHz', 0), b.get('gain', 1.0))
 
         S = stft(sig, win=1024, hop=256)

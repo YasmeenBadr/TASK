@@ -1,10 +1,10 @@
 {
   "music": {
     "sliders": [
-      {"label": "Kick/Bass", "windows": [{"startHz": 40, "widthHz": 120}]},
-      {"label": "Snare/Mids", "windows": [{"startHz": 200, "widthHz": 400}]},
-      {"label": "Guitar/Piano", "windows": [{"startHz": 500, "widthHz": 1500}]},
-      {"label": "Vocals/Lead", "windows": [{"startHz": 1500, "widthHz": 3500}]}
+      {"label": "Guitar", "windows": [{"startHz": 40, "widthHz": 360}]},
+      {"label": "Flute",  "windows": [{"startHz": 400, "widthHz": 400}]},
+      {"label": "Violin", "windows": [{"startHz": 950, "widthHz": 3050}]},
+      {"label": "Xylophone", "windows": [{"startHz": 5000, "widthHz": 9000}]}
     ]
   },
   "animals": {

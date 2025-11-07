@@ -95,6 +95,7 @@ def istft(modifier, stft_data, out_len=None):
     w = hann(N)
     length = out_len if out_len is not None else (len(reals) * hop + N)
     out = np.zeros(length, dtype=np.float64)
+    norm = np.zeros(length, dtype=np.float64)  # window-squared normalization
     for f in range(len(reals)):
         re = np.array(reals[f], dtype=np.float64)
         im = np.array(imags[f], dtype=np.float64)
@@ -104,7 +105,12 @@ def istft(modifier, stft_data, out_len=None):
         start = f * hop
         end = min(start + N, length)
         nlen = end - start
-        out[start:end] += re[:nlen] * w[:nlen]
+        seg = re[:nlen] * w[:nlen]
+        out[start:end] += seg
+        norm[start:end] += (w[:nlen] ** 2)
+    # Avoid division by zero and normalize overlap-add energy
+    nz = norm > 1e-12
+    out[nz] = out[nz] / norm[nz]
     return out.tolist()
 
 
@@ -121,10 +127,19 @@ def make_modifier_from_scheme(scheme: EQScheme):
     def modifier(re, im, N):
         bin_hz = scheme.sample_rate / N
         for b in scheme.bands:
-            start_bin = max(0, int(b["startHz"] / bin_hz))
-            end_bin = min(N // 2, int((b["startHz"] + b["widthHz"]) / bin_hz))
-            g = float(b["gain"]) if 0 <= b["gain"] else 0.0
-            for k in range(start_bin, end_bin + 1):
+            start = float(b.get("startHz", 0.0))
+            width = float(b.get("widthHz", 0.0))
+            g = float(b.get("gain", 1.0))
+            if g < 0:
+                g = 0.0
+            if width <= 0:
+                continue
+            # half-open interval [start_bin, end_bin)
+            start_bin = max(0, int(start / bin_hz))
+            end_bin = min(N // 2, int((start + width) / bin_hz))
+            if end_bin <= start_bin:
+                end_bin = min(N // 2, start_bin + 1)
+            for k in range(start_bin, end_bin):
                 re[k] *= g
                 im[k] *= g
                 if k != 0 and k != N // 2:
