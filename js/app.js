@@ -194,10 +194,7 @@ async function applyEQ(){
     }
 }
 
-function scheduleApply(){
-    if(applyTimer) clearTimeout(applyTimer);
-    applyTimer = setTimeout(()=>{ applyEQ(); }, 250);
-}
+
 
 // renderBands is imported from eq.js and used with (bandsDiv, scheme, presetGroups)
 
@@ -398,4 +395,3 @@ document.getElementById('outStop').addEventListener('click', ()=>{ if(outSource)
 renderBands(bandsDiv, scheme, presetGroups); 
 updateModeUI();
 
-// encodeWavPCM16Mono is imported from helpers.js
