@@ -88,18 +88,26 @@ body {
   align-items: center;
 }
 
-/* Button Styles */
-.btn-primary, .btn-secondary, .btn-apply, .btn-control {
+/* ============================================================================
+   BUTTON STATES AND FIXES
+   ============================================================================ */
+
+/* Ensure buttons are visible and properly styled */
+.btn-primary, .btn-secondary, .btn-apply {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 0.75rem 1.25rem;
-  font-weight: 600;
   cursor: pointer;
   transition: var(--transition);
-  display: flex;
-  align-items: center;
+  padding: 0.75rem 1.25rem;
   gap: 0.5rem;
-  font-size: 0.875rem;
 }
 
 .btn-primary {
@@ -149,6 +157,60 @@ body {
 
 .btn-control:hover {
   transform: scale(1.1);
+}
+
+/* Specific button fixes */
+#btnDemucs, #btnCompare {
+  min-width: 140px;
+  justify-content: center;
+}
+
+/* Button disabled states */
+.btn-primary:disabled, .btn-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.btn-primary:disabled:hover, .btn-secondary:disabled:hover {
+  transform: none !important;
+  box-shadow: var(--shadow) !important;
+}
+
+/* Toolbar group responsiveness */
+@media (max-width: 1024px) {
+  .toolbar-group {
+      flex-wrap: wrap;
+      justify-content: center;
+  }
+  
+  #btnDemucs, #btnCompare {
+      min-width: 120px;
+      font-size: 0.8rem;
+      padding: 0.6rem 1rem;
+  }
+}
+
+/* Loading animation for AI buttons */
+.btn-primary.loading {
+  position: relative;
+  color: transparent;
+}
+
+.btn-primary.loading::after {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 2px solid transparent;
+  border-top: 2px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 /* Input Styles */
@@ -256,22 +318,6 @@ input:checked + .slider:before {
   color: var(--text);
 }
 
-.toggle-mini .slider.mini {
-  width: 2rem;
-  height: 1rem;
-}
-
-.toggle-mini .slider.mini:before {
-  width: 0.75rem;
-  height: 0.75rem;
-  top: 0.125rem;
-  left: 0.125rem;
-}
-
-.toggle-mini input:checked + .slider.mini:before {
-  transform: translateX(1rem);
-}
-
 /* Main Content */
 .main-content {
   flex: 1;
@@ -349,16 +395,22 @@ input:checked + .slider:before {
   align-items: center;
   gap: 0.5rem;
   color: var(--text-secondary);
+  background: var(--card-bg);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
 }
 
-.speed-control input {
+.speed-control input[type="range"] {
   width: 80px;
+  margin: 0;
 }
 
 .speed-value {
   font-weight: 600;
-  color: var(--text);
   min-width: 2.5rem;
+  text-align: center;
+  color: var(--text);
 }
 
 /* Visualization Container */
@@ -521,14 +573,18 @@ canvas {
   padding: 0;
 }
 
-.gain-value {
+.gain-value,
+.startVal,
+.widthVal,
+.gainVal {
   font-weight: 700;
   color: var(--primary);
   min-width: 3rem;
   text-align: center;
 }
 
-.remove-band {
+.remove-band,
+.remove {
   background: var(--danger);
   color: white;
   border: none;
@@ -538,12 +594,342 @@ canvas {
   transition: var(--transition);
 }
 
-.remove-band:hover {
+.remove-band:hover,
+.remove:hover {
   background: #dc2626;
   transform: scale(1.1);
 }
 
-/* Responsive Design */
+/* ============================================================================
+   DEMUCS MODAL STYLES - COMPLETE AND ENHANCED
+   ============================================================================ */
+
+.spleeter-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: fadeIn 0.3s ease;
+}
+
+.spleeter-modal[style*="display: flex"] {
+  display: flex !important;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-content {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  border-radius: 16px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  max-width: 800px;
+  width: 90%;
+  max-height: 85vh;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  animation: slideUpModal 0.4s ease;
+}
+
+@keyframes slideUpModal {
+  from {
+    transform: translateY(50px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 32px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: linear-gradient(to right, rgba(59, 130, 246, 0.1), transparent);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #e5e7eb;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-header h2 i {
+  color: #3b82f6;
+  font-size: 1.75rem;
+}
+
+.close-modal {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 1.25rem;
+}
+
+.close-modal:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  transform: scale(1.05);
+}
+
+.modal-body {
+  padding: 24px 32px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.5);
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.7);
+}
+
+.stem-item {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  transition: all 0.3s;
+}
+
+.stem-item:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(59, 130, 246, 0.4);
+  transform: translateX(4px);
+}
+
+.stem-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.stem-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #e5e7eb;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stem-header h3 i {
+  color: #3b82f6;
+  font-size: 1.5rem;
+}
+
+.stem-size {
+  background: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.stem-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stem-actions button {
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+  flex: 1;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.stem-actions .btn-primary {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+}
+
+.stem-actions .btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 8px -1px rgba(59, 130, 246, 0.4);
+}
+
+.stem-actions .btn-secondary {
+  background: rgba(100, 116, 139, 0.3);
+  color: #e5e7eb;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.stem-actions .btn-secondary:hover {
+  background: rgba(100, 116, 139, 0.5);
+  border-color: rgba(148, 163, 184, 0.5);
+  transform: translateY(-2px);
+}
+
+.modal-footer {
+  padding: 20px 32px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.5);
+  text-align: center;
+}
+
+.modal-footer p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.modal-footer i {
+  color: #3b82f6;
+}
+
+/* ============================================================================
+   DEMUCS BUTTON SPECIFIC STYLES
+   ============================================================================ */
+
+/* Ready state */
+.btn-demucs-ready,
+#btnDemucs.ready {
+  background: linear-gradient(135deg, var(--success) 0%, #16a34a 100%) !important;
+}
+
+/* Installing state */
+.btn-demucs-installing,
+#btnDemucs.installing {
+  background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%) !important;
+}
+
+/* Error state */
+.btn-demucs-error,
+#btnDemucs.error {
+  background: linear-gradient(135deg, var(--danger) 0%, #dc2626 100%) !important;
+}
+
+/* Not installed state */
+#btnDemucs.not-installed {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%) !important;
+  opacity: 0.7;
+}
+
+/* Tooltip for installation hint */
+[title] {
+  position: relative;
+}
+
+[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--dark-bg);
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  z-index: 1000;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  margin-bottom: 8px;
+}
+
+/* ============================================================================
+   ACCESSIBILITY IMPROVEMENTS
+   ============================================================================ */
+
+/* Focus states for better accessibility */
+.btn-primary:focus, 
+.btn-secondary:focus, 
+.btn-apply:focus,
+input:focus,
+select:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .btn-primary {
+      border: 2px solid white;
+  }
+  
+  .btn-secondary {
+      border: 2px solid var(--text);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary, 
+  .btn-secondary, 
+  .btn-apply,
+  .visualization-panel,
+  .band,
+  .spleeter-modal,
+  .modal-content,
+  .stem-item {
+      animation: none;
+      transition: none;
+  }
+}
+
+/* ============================================================================
+   RESPONSIVE DESIGN
+   ============================================================================ */
+
 @media (max-width: 1200px) {
   .visualization-section {
     grid-template-columns: 1fr;
@@ -597,6 +983,28 @@ canvas {
   .eq-actions {
     justify-content: center;
   }
+  
+  /* Modal responsive */
+  .modal-content {
+    width: 95%;
+    max-height: 90vh;
+  }
+  
+  .modal-header {
+    padding: 16px 20px;
+  }
+  
+  .modal-body {
+    padding: 16px 20px;
+  }
+  
+  .stem-actions {
+    flex-direction: column;
+  }
+  
+  .stem-actions button {
+    min-width: 100%;
+  }
 }
 
 /* Scrollbar Styling */
@@ -636,6 +1044,21 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--primary-dark);
+  transform: scale(1.2);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: var(--primary);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+  transition: var(--transition);
+}
+
+input[type="range"]::-moz-range-thumb:hover {
   background: var(--primary-dark);
   transform: scale(1.2);
 }
