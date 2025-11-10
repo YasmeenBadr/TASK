@@ -197,14 +197,42 @@ PRESETS = {
             {"label": "Bat", "windows": [{"startHz": 3000, "widthHz": 6000}]}
         ]
     },
-    "voices": {
-        "sliders": [
-            {"label": "Male Low", "windows": [{"startHz": 85, "widthHz": 120}]},
-            {"label": "Female Mid", "windows": [{"startHz": 165, "widthHz": 250}]},
-            {"label": "Sibilance", "windows": [{"startHz": 5000, "widthHz": 4000}]},
-            {"label": "Formants", "windows": [{"startHz": 500, "widthHz": 2000}]}
+   "voices": {
+    "sliders": [
+      {
+        "label": "Male (Deep)",
+        "windows": [
+          {"startHz": 414.6, "widthHz": 100},
+          {"startHz": 248.6, "widthHz": 200},
+          {"startHz": 500, "widthHz": 400}
         ]
-    }
+      },
+      {
+        "label": "Female (High)",
+        "windows": [
+          {"startHz": 162.2, "widthHz": 100},
+          {"startHz": 200, "widthHz": 200},
+          {"startHz": 500, "widthHz": 400}
+        ]
+      },
+      {
+        "label": "Male (Mid)",
+        "windows": [
+          {"startHz": 50, "widthHz": 100},
+          {"startHz": 332.0, "widthHz": 200},
+          {"startHz": 500, "widthHz": 400}
+        ]
+      },
+      {
+        "label": "Child/Young",
+        "windows": [
+          {"startHz": 638.2, "widthHz": 100},
+          {"startHz": 561.0, "widthHz": 200},
+          {"startHz": 519.8, "widthHz": 400}
+        ]
+      }
+    ]
+  }
 }
 
 @app.route('/api/presets')
