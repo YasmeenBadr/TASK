@@ -3,13 +3,13 @@
     "sliders": []
   },
   "music": {
-    "sliders": [
-      {"label": "Guitar", "windows": [{"startHz": 40, "widthHz": 360}]},
-      {"label": "Flute", "windows": [{"startHz": 400, "widthHz": 400}]},
-      {"label": "Violin", "windows": [{"startHz": 950, "widthHz": 3050}]},
-      {"label": "Xylophone", "windows": [{"startHz": 5000, "widthHz": 9000}]}
-    ]
-  },
+        "sliders": [
+            {"label": "Drums", "windows": [{"startHz": 50, "widthHz": 450}]},
+            {"label": "Bass", "windows": [{"startHz": 40, "widthHz": 210}]},
+            {"label": "Vocals", "windows": [{"startHz": 300, "widthHz": 3100}]},
+            {"label": "Other Instruments", "windows": [{"startHz": 400, "widthHz": 7600}]}
+        ]
+    },
   "animals": {
     "sliders": [
       {"label": "Dog", "windows": [{"startHz": 0, "widthHz": 450}]},
