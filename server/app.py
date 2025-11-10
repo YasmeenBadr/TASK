@@ -181,14 +181,14 @@ def spectrogram():
 
 
 PRESETS = {
-    "music": {
-        "sliders": [
-            {"label": "Drums", "windows": [{"startHz": 50, "widthHz": 450}]},
-            {"label": "Bass", "windows": [{"startHz": 40, "widthHz": 210}]},
-            {"label": "Vocals", "windows": [{"startHz": 300, "widthHz": 3100}]},
-            {"label": "Other Instruments", "windows": [{"startHz": 400, "widthHz": 7600}]}
-        ]
-    },
+   "music": {
+  "sliders": [
+    {"label": "Sub Bass", "windows": [{"startHz": 40, "widthHz": 60}]},
+    {"label": "Kick/Drums", "windows": [{"startHz": 80, "widthHz": 420}]},
+    {"label": "Vocals", "windows": [{"startHz": 500, "widthHz": 3000}]},
+    {"label": "Other Instruments", "windows": [{"startHz": 4000, "widthHz": 6000}]}
+  ]
+},
     "animals": {
         "sliders": [
             {"label": "Dog", "windows": [{"startHz": 0, "widthHz": 450}]},
