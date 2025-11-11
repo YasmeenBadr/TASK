@@ -43,11 +43,18 @@
             <div class="select-wrapper">
               <i class="fas fa-chart-line"></i>
               <select id="scaleSelect">
-                <option value="linear">Linear Scale</option>
-                <option value="audiogram">Audiogram Scale</option>
+                <option value="linear">Linear</option>
+                <option value="audiogram">Audiogram</option>
               </select>
             </div>
             
+            <div class="select-wrapper">
+              <i class="fas fa-signal"></i>
+              <select id="magSelect">
+                <option value="linear">Linear</option>
+                <option value="db">dB</option>
+              </select>
+            </div>
           </div>
           
           <div class="toolbar-group">
@@ -88,6 +95,9 @@
                 <button id="inStop" class="btn-control stop">
                   <i class="fas fa-stop"></i>
                 </button>
+                <button id="resetInputView" class="btn-control" title="Reset View">
+                  <i class="fas fa-sync-alt"></i>
+                </button>
               </div>
               <div class="speed-control">
                 <i class="fas fa-tachometer-alt"></i>
@@ -99,12 +109,6 @@
           
           <div class="visualization-container">
             <div class="canvas-wrapper">
-              <div class="waveform-header">
-                <h3>Waveform</h3>
-                <button id="resetInputView" class="btn-reset" title="Reset View">
-                  <i class="fas fa-sync-alt"></i> Reset View
-                </button>
-              </div>
               <canvas id="inputWave" width="1000" height="240"></canvas>
             </div>
             <div class="canvas-wrapper">
@@ -134,6 +138,9 @@
                 <button id="outStop" class="btn-control stop">
                   <i class="fas fa-stop"></i>
                 </button>
+                <button id="resetOutputView" class="btn-control" title="Reset View">
+                  <i class="fas fa-sync-alt"></i>
+                </button>
               </div>
               <div class="speed-control">
                 <i class="fas fa-tachometer-alt"></i>
@@ -145,12 +152,6 @@
           
           <div class="visualization-container">
             <div class="canvas-wrapper">
-              <div class="waveform-header">
-                <h3>Waveform</h3>
-                <button id="resetOutputView" class="btn-reset" title="Reset View">
-                  <i class="fas fa-sync-alt"></i> Reset View
-                </button>
-              </div>
               <canvas id="outputWave" width="1000" height="240"></canvas>
             </div>
             <div class="canvas-wrapper">
