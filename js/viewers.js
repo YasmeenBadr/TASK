@@ -446,6 +446,7 @@ export function drawSpectrum(canvas, magnitudes, sampleRate, scale, magScale='li
 }
 
 export function drawSpectrogram(canvas, spec, sampleRate){
+  console.log(`Drawing spectrogram on canvas ${canvas.id}: ${canvas.width}x${canvas.height}`);
   const ctx = canvas.getContext('2d'); 
   const w = canvas.width, h = canvas.height; 
   
@@ -454,6 +455,7 @@ export function drawSpectrogram(canvas, spec, sampleRate){
   ctx.fillRect(0, 0, w, h);
   
   if (!spec || spec.length === 0) {
+    console.log('No spectrogram data provided');
     return;
   }
   
@@ -476,6 +478,7 @@ export function drawSpectrogram(canvas, spec, sampleRate){
   const dbMax = 20 * Math.log10(max + eps);
   const dbMin = 20 * Math.log10(min + eps);
   const dynRange = Math.min(120, dbMax - dbMin); // Limit dynamic range to 120dB max
+  console.log(`Spectrogram range: ${dbMin.toFixed(1)}dB to ${dbMax.toFixed(1)}dB, dynamic range: ${dynRange.toFixed(1)}dB`);
   
   // Adjust the minimum to ensure we have a reasonable range
   const adjustedDbMin = dbMax - dynRange;
@@ -513,6 +516,8 @@ export function drawSpectrogram(canvas, spec, sampleRate){
   ctx.strokeStyle = '#00ff00';
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, w-2, h-2);
+  
+  console.log(`Spectrogram drawn on ${canvas.id} with ${spec.length} frames`);
 }
 
 // Green color map for spectrogram

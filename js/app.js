@@ -150,14 +150,22 @@ async function updateFreqView(signal, which){
     }
 }
 
-async function updateSpecs() {    
+async function updateSpecs() {
+    console.log('updateSpecs called');
+    
     // Check if spectrograms are enabled
     if (!toggleSpecGlobal || !toggleSpecGlobal.checked) {
+        console.log('Spectrograms are disabled');
         return;
     }
     
+    console.log('Updating spectrograms...');
+    console.log('Input signal length:', inputSignal ? inputSignal.length : 'none');
+    console.log('Output signal length:', outputSignal ? outputSignal.length : 'none');
+    
     // Abort any previous spectrogram fetch before starting new one
     if (specAbortController) {
+        console.log('Aborting previous spectrogram fetch');
         specAbortController.abort();
     }
     
@@ -166,37 +174,61 @@ async function updateSpecs() {
     specAbortController = localSpecCtrl;
     
     // Helper function to handle spectrogram updates
-    async function updateSpectrogram(signal, canvas) {
-        if (!signal || !canvas) {
+    async function updateSpectrogram(signal, canvas, name) {
+        if (!signal) {
+            console.log(`No ${name} signal to process`);
+            return;
+        }
+        if (!canvas) {
+            console.error(`No canvas element for ${name} spectrogram`);
             return;
         }
         
+        console.log(`Processing ${name} spectrogram...`);
+        
         try {
             const mags = await fetchSpectrogram(signal, sampleRate, localSpecCtrl.signal);
+            console.log(`Fetched ${name} spectrogram data:`, mags ? `Array[${mags.length}]` : 'null');
             
             // Only update if this is still the current request and spectrograms are still enabled
-            if (localSpecCtrl !== specAbortController || !toggleSpecGlobal.checked || !mags) {
+            if (localSpecCtrl !== specAbortController) {
+                console.log('Skipping update - newer request in progress');
                 return;
             }
             
+            if (!toggleSpecGlobal.checked) {
+                console.log('Skipping update - spectrograms disabled');
+                return;
+            }
+            
+            if (!mags) {
+                console.error('No spectrogram data returned');
+                return;
+            }
+            
+            console.log(`Drawing ${name} spectrogram...`);
             drawSpectrogram(canvas, mags, sampleRate);
+            console.log(`Successfully drew ${name} spectrogram`);
             
         } catch (err) {
-            // Silently handle aborted requests, only log other errors
-            if (err.name !== 'AbortError') {
-                console.error('Error processing spectrogram:', err);
+            if (err.name === 'AbortError') {
+                console.log(`${name} spectrogram fetch aborted`);
+            } else {
+                console.error(`Error processing ${name} spectrogram:`, err);
             }
         }
     }
     
     // Update both spectrograms in parallel
     try {
+        console.log('Starting spectrogram updates...');
         await Promise.all([
-            inputSignal ? updateSpectrogram(inputSignal, inputSpec) : Promise.resolve(),
-            outputSignal ? updateSpectrogram(outputSignal, outputSpec) : Promise.resolve()
+            inputSignal ? updateSpectrogram(inputSignal, inputSpec, 'input') : Promise.resolve(),
+            outputSignal ? updateSpectrogram(outputSignal, outputSpec, 'output') : Promise.resolve()
         ]);
+        console.log('Finished updating spectrograms');
     } catch (err) {
-        // Errors are already handled in updateSpectrogram
+        console.error('Error in spectrogram update:', err);
     }
 }
 
@@ -208,18 +240,12 @@ function currentBandsFromState(){
       for(const g of presetGroups){
         const gain = (typeof g.gain === 'number') ? g.gain : 1;
         for(const w of (g.windows||[])){
-          // Convert widthHz to endHz for the backend
-          bands.push({startHz: w.startHz, widthHz: w.widthHz, gain});
+          bands.push({startHz:w.startHz, widthHz:w.widthHz, gain});
         }
       }
       return bands;
     }
-    // Convert endHz back to widthHz for backward compatibility with the backend
-    return scheme.bands.map(b => ({
-      startHz: b.startHz,
-      widthHz: b.endHz - b.startHz, // Calculate widthHz from endHz
-      gain: b.gain
-    }));
+    return scheme.bands.map(b=>({startHz:b.startHz, widthHz:b.widthHz, gain:b.gain}));
 }
 
 async function applyEQ(){ 
