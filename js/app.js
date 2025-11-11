@@ -504,25 +504,31 @@ window.playDemucsStem = async function(stemName) {
             view[i] = binaryData.charCodeAt(i);
         }
         
-        // Decode and play
+        // Decode audio
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        const signal = audioBuffer.getChannelData(0);
+        
+        // FIXED: Use the audioBuffer directly, not the signal array
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
         
         // Stop any current playback
         if (outSource) {
             try { outSource.stop(); } catch (_) {}
         }
         
-        outSource = playBuffer(signal, 1.0, audioCtx, audioBuffer.sampleRate);
-        outSource.onended = () => { outSource = null; };
+        // Start playing
+        source.start();
+        outSource = source;
+        source.onended = () => { outSource = null; };
+        
+        console.log(`[Demucs] Playing ${stemName} - duration: ${audioBuffer.duration}s`);
         
     } catch (error) {
         console.error('[Demucs] Play error:', error);
         alert(`Failed to play ${stemName}: ${error.message}`);
     }
 };
-
-
 modeSelect.addEventListener('change', async ()=>{
     if(modeSelect.value==='generic'){ 
         presetGroups=null; 
@@ -585,9 +591,17 @@ btnGenerate.addEventListener('click',async ()=>{
 // --- Playback Controls ---
 
 let inSource=null, outSource=null;
+
 async function ensureAudioCtx(){
-    if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-    if(audioCtx.state==='suspended') await audioCtx.resume();
+    if(!audioCtx) {
+        audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        console.log('✅ AudioContext created');
+    }
+    if(audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+        console.log('✅ AudioContext resumed');
+    }
+    console.log(`🔊 AudioContext state: ${audioCtx.state}, sampleRate: ${audioCtx.sampleRate}`);
 }
 
 // playBuffer is imported from helpers.js
@@ -677,21 +691,25 @@ async function runDemucsSeparation() {
         const elapsedTime = ((performance.now() - startTime) / 1000).toFixed(2);
         console.log(`[Demucs] Separation complete in ${elapsedTime}s`, data.stem_names);
         
-        // Store results
-        demucsSeparatedStems = {
-            stems: data.stems,
-            stemNames: data.stem_names,
-            sampleRate: data.sampleRate,
-            processingTime: elapsedTime
-        };
-        
-        // Display stems
-        displayDemucsStemsControls(demucsSeparatedStems);
-        
-        alert(`✅ AI Separation Complete!\n\n` +
-              `Processing time: ${elapsedTime}s\n` +
-              `Stems separated: ${data.stem_names.join(', ')}\n\n` +
-              `Now you can adjust each instrument's volume!`);
+      // Normalize field names from backend (snake_case → camelCase)
+const stemNames = data.stem_names || data.stemNames || Object.keys(data.stems || {});
+
+// Store results
+demucsSeparatedStems = {
+    stems: data.stems,
+    stemNames: stemNames,
+    sampleRate: data.sampleRate,
+    processingTime: elapsedTime
+};
+
+// Display stems
+displayDemucsStemsControls(demucsSeparatedStems);
+
+alert(`✅ AI Separation Complete!\n\n` +
+      `Processing time: ${elapsedTime}s\n` +
+      `Stems separated: ${stemNames.join(', ')}\n\n` +
+      `Now you can adjust each instrument's volume!`);
+
         
     } catch (error) {
         console.error('[Demucs] Error:', error);
@@ -777,45 +795,6 @@ window.closeDemucsModal = function() {
     const modal = document.getElementById('demucsModal');
     if (modal) {
         modal.style.display = 'none';
-    }
-};
-
-window.playDemucsStem = async function(stemName) {
-    if (!demucsResults || !demucsResults.stems[stemName]) {
-        console.error('Stem not found:', stemName);
-        return;
-    }
-    
-    try {
-        await ensureAudioCtx();
-        
-        // Decode base64 to audio buffer
-        const base64Data = demucsResults.stems[stemName].data;
-        const binaryData = atob(base64Data);
-        const arrayBuffer = new ArrayBuffer(binaryData.length);
-        const view = new Uint8Array(arrayBuffer);
-        
-        for (let i = 0; i < binaryData.length; i++) {
-            view[i] = binaryData.charCodeAt(i);
-        }
-        
-        // Decode audio
-        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-        const signal = audioBuffer.getChannelData(0);
-        
-        // Stop any playing audio
-        if (outSource) {
-            try { outSource.stop(); } catch (_) {}
-        }
-        
-        // Play
-        outSource = playBuffer(signal, 1.0, audioCtx, audioBuffer.sampleRate);
-        outSource.onended = () => { outSource = null; };
-        
-        console.log(`Playing ${stemName}`);
-    } catch (error) {
-        console.error('Play stem error:', error);
-        alert(`Failed to play ${stemName}: ${error.message}`);
     }
 };
 

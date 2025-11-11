@@ -364,7 +364,7 @@ def run_demucs():
         return jsonify({
             "success": True,
             "stems": stems,
-            "stem_names": stem_names,
+            "stemNames": stem_names,
             "sampleRate": sample_rate,
             "processingTime": round(processing_time, 2)
         })
