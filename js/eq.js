@@ -12,10 +12,12 @@ export class EQScheme{
   }
 
   // Method to add a new frequency band with optional default values.
-  addBand(startHz=100, widthHz=100, gain=1){
-    // Pushes a new band object { startHz, widthHz, gain } to the bands array.
-    this.bands.push({startHz, widthHz, gain});
-  }
+  addBand(startHz=100, endHz=1000, gain=1){
+    // Pushes a new band object { startHz, endHz, gain } to the bands array.
+    // Ensure endHz is always greater than startHz
+    endHz = Math.max(startHz + 1, endHz);
+    this.bands.push({startHz, endHz, gain});
+  }
 
   // Method to remove a band at a specific index.
   removeBand(idx){
@@ -25,17 +27,27 @@ export class EQScheme{
 
   // Method to serialize the scheme into a plain JavaScript object for saving (e.g., JSON).
   toJSON(){
-    return {sampleRate:this.sampleRate, bands:this.bands};
-  }
+    // Convert back to width for backward compatibility
+    const bands = this.bands.map(b => ({
+      startHz: b.startHz,
+      widthHz: b.endHz - b.startHz,
+      gain: b.gain
+    }));
+    return {sampleRate: this.sampleRate, bands};
+  }
 
   // Static method to create an EQScheme instance from a serialized object.
   static fromJSON(obj){
-    // Creates a new EQScheme instance using the sampleRate from the object.
-    const s=new EQScheme(obj.sampleRate);
-    // Assigns the bands array, defaulting to an empty array if obj.bands is null/undefined.
-    s.bands=obj.bands||[];
-    return s;
-  }
+    // Creates a new EQScheme instance using the sampleRate from the object.
+    const s = new EQScheme(obj.sampleRate);
+    // Convert width-based bands to end-based bands
+    s.bands = (obj.bands || []).map(b => ({
+      startHz: b.startHz,
+      endHz: b.startHz + b.widthHz,
+      gain: b.gain
+    }));
+    return s;
+  }
 }
 
 
@@ -80,85 +92,100 @@ export function renderBands(bandsDiv, scheme, presetGroups){
   // --- 2. INDIVIDUAL BANDS MODE ---
   // If no preset groups, iterate over each band in the EQ scheme.
   scheme.bands.forEach((b,idx)=>{
-    const div=document.createElement('div');
-    div.className='band';
-    // Insert the HTML structure for a single detailed band control (3 sliders + 1 button).
-    div.innerHTML=`<label>Start Hz<input type="range" min="0" step="1" value="${b.startHz}"></label>
-    <span class="startVal">${b.startHz} Hz</span>
-    <label>Width Hz<input type="range" min="1" step="1" value="${b.widthHz}"></label>
-    <span class="widthVal">${b.widthHz} Hz</span>
-    <label>Gain 0-2<input type="range" min="0" max="2" step="0.01" value="${b.gain}"></label>
-    <span class="gainVal">${b.gain.toFixed(2)}x</span>
-    <button class="remove">Remove</button>`;
+    const div=document.createElement('div');
+    div.className='band';
+    // Insert the HTML structure for a single detailed band control (3 sliders + 1 button).
+    div.innerHTML=`<label>Start Hz<input type="range" min="0" step="1" value="${b.startHz}" class="start-slider"></label>
+    <span class="startVal">${b.startHz} Hz</span>
+    <label>End Hz<input type="range" min="0" step="1" value="${b.endHz}" class="end-slider"></label>
+    <span class="endVal">${b.endHz} Hz</span>
+    <label>Gain 0-2<input type="range" min="0" max="2" step="0.01" value="${b.gain}" class="gain-slider"></label>
+    <span class="gainVal">${b.gain.toFixed(2)}x</span>
+    <button class="remove">Remove</button>`;
 
-    // Select all inputs in the current band div.
-    const inputs = div.querySelectorAll('input');
-    // Use array destructuring to easily assign the three inputs to separate variables.
-    const [startR,widthR,gainR] = inputs;
-    
-    // Select the display spans for value feedback.
-    const spanStart = div.querySelector('.startVal');
-    const spanWidth = div.querySelector('.widthVal');
-    const spanGain = div.querySelector('.gainVal');
+     // Select all inputs in the current band div
+    const startR = div.querySelector('.start-slider');
+    const endR = div.querySelector('.end-slider');
+    const gainR = div.querySelector('.gain-slider');
+    
+    // Select the display spans for value feedback
+    const spanStart = div.querySelector('.startVal');
+    const spanEnd = div.querySelector('.endVal');
+    const spanGain = div.querySelector('.gainVal');
 
-    // Set dynamic ranges based on Nyquist frequency (half the sample rate).
-    // The Nyquist frequency is the theoretical maximum frequency a digital audio system can represent.
-    const nyq = Math.max(1, Math.floor((scheme.sampleRate||44100)/2));
-    // The start frequency of the band cannot exceed the Nyquist frequency.
-    startR.max = String(nyq);
-    
-    // Helper function to dynamically update the maximum width.
-    // Width cannot exceed the remaining space up to the Nyquist frequency (StartHz + WidthHz <= Nyquist).
-    const updateWidthMax = ()=>{ 
-      // Max width is Nyquist minus the current start frequency, ensuring it's at least 1.
-      widthR.max = String(Math.max(1, nyq - (+startR.value))); 
-    };
-    
-    updateWidthMax(); // Call once to set the initial max width based on the band's initial startHz.
+    // Set dynamic ranges based on Nyquist frequency (half the sample rate)
+    const nyq = Math.max(1, Math.floor((scheme.sampleRate||44100)/2));
+    
+    // Set initial slider ranges
+    startR.max = String(nyq - 1);
+    endR.min = String(1);
+    endR.max = String(nyq);
+    
+    // Ensure end is always greater than start
+    const updateSliderRanges = () => {
+      // Ensure start is at least 1 less than end
+      startR.max = Math.min(nyq - 1, +endR.value - 1);
+      // Ensure end is at least 1 more than start
+      endR.min = Math.max(1, +startR.value + 1);
+    };
+    
+    // Initialize slider positions
+    startR.value = b.startHz;
+    endR.value = b.endHz;
+    updateSliderRanges();
 
-    // --- Event Handlers ---
-    
-    // Handler for the Start Hz slider.
-    startR.addEventListener('input',()=>{
-      // Update the scheme object and display span.
-      b.startHz = +startR.value;
-      spanStart.textContent = `${b.startHz} Hz`;
-      
-      // Recalculate the max width based on the new start frequency.
-      updateWidthMax();
-      
-      // If the current width now exceeds the new maximum allowed width,
-      // automatically clamp the width value and update the scheme/display.
-      if(+widthR.value > +widthR.max){ 
-        widthR.value = widthR.max; 
-      }
-      b.widthHz = +widthR.value;
-      spanWidth.textContent = `${b.widthHz} Hz`;
-    });
+    // --- Event Handlers ---
+    
+    // Handler for the Start Hz slider
+    startR.addEventListener('input', () => {
+      // Update the scheme object and display span
+      b.startHz = +startR.value;
+      spanStart.textContent = `${b.startHz} Hz`;
+      
+      // Update end slider min and start slider max
+      updateSliderRanges();
+      
+      // If end is now less than start, update it
+      if (b.endHz <= b.startHz) {
+        b.endHz = b.startHz + 1;
+        endR.value = b.endHz;
+        spanEnd.textContent = `${b.endHz} Hz`;
+      }
+    });
 
-    // Handler for the Width Hz slider.
-    widthR.addEventListener('input',()=>{
-      // Update the scheme object and display span.
-      b.widthHz = +widthR.value;
-      spanWidth.textContent = `${b.widthHz} Hz`;
-    });
+    // Handler for the End Hz slider
+    endR.addEventListener('input', () => {
+      // Update the scheme object and display span
+      b.endHz = +endR.value;
+      spanEnd.textContent = `${b.endHz} Hz`;
+      
+      // Update start slider max and end slider min
+      updateSliderRanges();
+      
+      // If start is now greater than end, update it
+      if (b.startHz >= b.endHz) {
+        b.startHz = Math.max(0, b.endHz - 1);
+        startR.value = b.startHz;
+        spanStart.textContent = `${b.startHz} Hz`;
+      }
+    });
 
-    // Handler for the Gain slider.
-    gainR.addEventListener('input',()=>{
-      // Update the scheme object and display span, formatting to two decimals.
-      b.gain=+gainR.value; 
-      spanGain.textContent=`${b.gain.toFixed(2)}x`;
-    });
+    // Handler for the Gain slider.
+    gainR.addEventListener('input',()=>{
+      // Update the scheme object and display span, formatting to two decimals.
+      b.gain=+gainR.value; 
+      spanGain.textContent=`${b.gain.toFixed(2)}x`;
+    });
 
-    // Handler for the Remove button.
-    const btn = div.querySelector('button');
-    btn.addEventListener('click',()=>{
-      // 1. Remove the band from the underlying data model.
-      scheme.removeBand(idx); 
-      // 2. Re-render all bands to refresh the UI and correct indices.
-      renderBands(bandsDiv, scheme, presetGroups);
-    });
-    
-    bandsDiv.appendChild(div); // Add the final control div to the container.
-  });
+    // Handler for the Remove button.
+    const btn = div.querySelector('button');
+    btn.addEventListener('click',()=>{
+      // 1. Remove the band from the underlying data model.
+      scheme.removeBand(idx); 
+      // 2. Re-render all bands to refresh the UI and correct indices.
+      renderBands(bandsDiv, scheme, presetGroups);
+    });
+    
+    bandsDiv.appendChild(div); // Add the final control div to the container.
+  });
 }
