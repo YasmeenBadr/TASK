@@ -141,8 +141,6 @@ async function updateSpecs(){
     }
 }
 
-// fetchSpectrogram is imported from helpers.js
-
 function currentBandsFromState(){
     if(presetGroups && presetGroups.length){
       const bands=[];
@@ -195,8 +193,6 @@ async function applyEQ(){
       if(applyEqBtn) applyEqBtn.disabled = false;
     }
 }
-
-// renderBands is imported from eq.js and used with (bandsDiv, scheme, presetGroups)
 
 function updateModeUI(){
     if(addBand){
@@ -280,6 +276,7 @@ if(toggleSpecGlobal){
       }
     });
 }
+
 function updateMusicModeUI() {
     const mode = modeSelect.value;
     
@@ -338,14 +335,26 @@ function updateMusicModeUI() {
                 border-radius: 12px;
                 border: 1px solid rgba(148, 163, 184, 0.2);
             ">
-                <button id="btnSeparateStems" class="btn-primary" style="
-                    padding: 14px 40px;
-                    font-size: 1rem;
-                    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
-                ">
-                    <i class="fas fa-magic"></i>
-                    Separate with AI
-                </button>
+                <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                    <button id="btnSeparateStems" class="btn-primary" style="
+                        padding: 14px 40px;
+                        font-size: 1rem;
+                        box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+                    ">
+                        <i class="fas fa-magic"></i>
+                        Separate with AI
+                    </button>
+                    <button id="btnComparePerformance" class="btn-secondary" style="
+                        padding: 14px 40px;
+                        font-size: 1rem;
+                        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+                        color: white;
+                        box-shadow: 0 4px 6px -1px rgba(139, 92, 246, 0.3);
+                    ">
+                        <i class="fas fa-chart-bar"></i>
+                        Compare Performance
+                    </button>
+                </div>
                 <p style="color: #9ca3af; margin-top: 16px; font-size: 0.875rem;">
                     <i class="fas fa-info-circle"></i> Processing time: 10-60 seconds depending on audio length
                 </p>
@@ -383,6 +392,18 @@ function updateMusicModeUI() {
             await runDemucsSeparation();
         });
     }
+    
+    // Setup comparison button
+    const btnComparePerf = document.getElementById('btnComparePerformance');
+    if (btnComparePerf) {
+        btnComparePerf.addEventListener('click', async () => {
+            if (!inputSignal) {
+                alert('⚠️ Please load an audio file first!');
+                return;
+            }
+            await compareDemucsVsEqualizer();
+        });
+    }
 }
 
 function displayDemucsStemsControls(results) {
@@ -390,8 +411,8 @@ function displayDemucsStemsControls(results) {
     container.innerHTML = '';
     container.style.display = 'block';
     
-    // Store gains for mixing
-    const stemGains = {};
+    // Initialize global stem gains object
+    window.stemGains = {};
     
     // Stem icons and colors
     const stemConfig = {
@@ -402,7 +423,7 @@ function displayDemucsStemsControls(results) {
     };
     
     results.stemNames.forEach(stemName => {
-        stemGains[stemName] = 1.0;
+        window.stemGains[stemName] = 1.0;
         const config = stemConfig[stemName] || { icon: 'fa-music', color: '#3b82f6', label: stemName };
         
         const stemDiv = document.createElement('div');
@@ -465,7 +486,7 @@ function displayDemucsStemsControls(results) {
         
         gainSlider.addEventListener('input', () => {
             const gain = parseFloat(gainSlider.value);
-            stemGains[stemName] = gain;
+            window.stemGains[stemName] = gain;
             gainDisplay.textContent = `${gain.toFixed(2)}x`;
         });
     });
@@ -478,7 +499,7 @@ function displayDemucsStemsControls(results) {
     mixButton.style.padding = '14px';
     mixButton.style.fontSize = '1rem';
     mixButton.innerHTML = '<i class="fas fa-magic"></i> Mix All Stems and Load to Output';
-    mixButton.onclick = () => mixAllStems(stemGains);
+    mixButton.onclick = () => mixAllStems();
     container.appendChild(mixButton);
 }
 
@@ -507,7 +528,7 @@ window.playDemucsStem = async function(stemName) {
         // Decode audio
         const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
         
-        // FIXED: Use the audioBuffer directly, not the signal array
+        // Use the audioBuffer directly
         const source = audioCtx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(audioCtx.destination);
@@ -529,6 +550,7 @@ window.playDemucsStem = async function(stemName) {
         alert(`Failed to play ${stemName}: ${error.message}`);
     }
 };
+
 modeSelect.addEventListener('change', async ()=>{
     if(modeSelect.value==='generic'){ 
         presetGroups=null; 
@@ -545,10 +567,8 @@ modeSelect.addEventListener('change', async ()=>{
         console.error(e); 
         presetGroups=null; 
     }
-    renderBands(bandsDiv, scheme, presetGroups);
+    renderBands(bandsDiv, scheme, presetGroups); 
     updateModeUI();
-    
-    // ADD THIS LINE:
     updateMusicModeUI();
 });
 
@@ -604,14 +624,13 @@ async function ensureAudioCtx(){
     console.log(`🔊 AudioContext state: ${audioCtx.state}, sampleRate: ${audioCtx.sampleRate}`);
 }
 
-// playBuffer is imported from helpers.js
-
 document.getElementById('inPlay').addEventListener('click', async ()=>{ 
     await ensureAudioCtx(); 
     if(inSource){ try{inSource.stop()}catch(_){} } 
     inSource=playBuffer(inputSignal||new Float32Array([0]), +document.getElementById('inSpeed').value, audioCtx, sampleRate); 
     inSource.onended = ()=>{ inSource = null; };
 });
+
 document.getElementById('outPlay').addEventListener('click', async ()=>{ 
     await ensureAudioCtx(); 
     if(outSource){ try{outSource.stop()}catch(_){} } 
@@ -654,7 +673,6 @@ document.getElementById('outStop').addEventListener('click', ()=>{ if(outSource)
 // DEMUCS AI SEPARATION
 // ============================================================================
 
-// Run Demucs separation
 async function runDemucsSeparation() {
     const btnSeparate = document.getElementById('btnSeparateStems');
     const originalHTML = btnSeparate.innerHTML;
@@ -691,24 +709,24 @@ async function runDemucsSeparation() {
         const elapsedTime = ((performance.now() - startTime) / 1000).toFixed(2);
         console.log(`[Demucs] Separation complete in ${elapsedTime}s`, data.stem_names);
         
-      // Normalize field names from backend (snake_case → camelCase)
-const stemNames = data.stem_names || data.stemNames || Object.keys(data.stems || {});
+        // Normalize field names from backend (snake_case → camelCase)
+        const stemNames = data.stem_names || data.stemNames || Object.keys(data.stems || {});
 
-// Store results
-demucsSeparatedStems = {
-    stems: data.stems,
-    stemNames: stemNames,
-    sampleRate: data.sampleRate,
-    processingTime: elapsedTime
-};
+        // Store results
+        demucsSeparatedStems = {
+            stems: data.stems,
+            stemNames: stemNames,
+            sampleRate: data.sampleRate,
+            processingTime: elapsedTime
+        };
 
-// Display stems
-displayDemucsStemsControls(demucsSeparatedStems);
+        // Display stems
+        displayDemucsStemsControls(demucsSeparatedStems);
 
-alert(`✅ AI Separation Complete!\n\n` +
-      `Processing time: ${elapsedTime}s\n` +
-      `Stems separated: ${stemNames.join(', ')}\n\n` +
-      `Now you can adjust each instrument's volume!`);
+        alert(`✅ AI Separation Complete!\n\n` +
+              `Processing time: ${elapsedTime}s\n` +
+              `Stems separated: ${stemNames.join(', ')}\n\n` +
+              `Now you can adjust each instrument's volume!`);
 
         
     } catch (error) {
@@ -722,84 +740,106 @@ alert(`✅ AI Separation Complete!\n\n` +
     }
 }
 
-function displayDemucsResults(results) {
-    let modal = document.getElementById('demucsModal');
-    
-    if (!modal) {
-        // Create modal
-        modal = document.createElement('div');
-        modal.id = 'demucsModal';
-        modal.className = 'spleeter-modal';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2><i class="fas fa-brain"></i> Demucs AI Separation Results</h2>
-                    <button class="close-modal" onclick="closeDemucsModal()">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="modal-body" id="demucsModalBody">
-                </div>
-                <div class="modal-footer">
-                    <p style="color: var(--text-secondary); font-size: 0.875rem;">
-                        <i class="fas fa-clock"></i> Processing time: <strong>${results.processingTime}s</strong>
-                    </p>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
+// ============================================================================
+// MIX ALL STEMS FUNCTION
+// ============================================================================
+
+async function mixAllStems() {
+    if (!demucsSeparatedStems) {
+        alert('❌ No stems available. Please run AI separation first.');
+        return;
     }
     
-    // Populate stems
-    const modalBody = document.getElementById('demucsModalBody');
-    modalBody.innerHTML = '';
+    if (!window.stemGains) {
+        alert('❌ Stem gains not initialized.');
+        return;
+    }
     
-    results.stemNames.forEach(stemName => {
-        const stem = results.stems[stemName];
-        if (!stem) return;
+    try {
+        await ensureAudioCtx();
         
-        const stemDiv = document.createElement('div');
-        stemDiv.className = 'stem-item';
+        console.log('[Demucs] Mixing stems with gains:', window.stemGains);
         
-        // Icon based on stem type
-        let icon = 'fa-music';
-        if (stemName === 'drums') icon = 'fa-drum';
-        else if (stemName === 'vocals') icon = 'fa-microphone';
-        else if (stemName === 'bass') icon = 'fa-guitar';
+        // Decode all stems
+        const decodedStems = {};
+        for (const stemName of demucsSeparatedStems.stemNames) {
+            const base64Data = demucsSeparatedStems.stems[stemName].data;
+            const binaryData = atob(base64Data);
+            const arrayBuffer = new ArrayBuffer(binaryData.length);
+            const view = new Uint8Array(arrayBuffer);
+            
+            for (let i = 0; i < binaryData.length; i++) {
+                view[i] = binaryData.charCodeAt(i);
+            }
+            
+            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            decodedStems[stemName] = audioBuffer.getChannelData(0);
+        }
         
-        stemDiv.innerHTML = `
-            <div class="stem-header">
-                <h3><i class="fas ${icon}"></i> ${stemName.toUpperCase()}</h3>
-                <span class="stem-size">${(stem.size / 1024).toFixed(1)} KB</span>
-            </div>
-            <div class="stem-actions">
-                <button class="btn-primary" onclick="playDemucsStem('${stemName}')">
-                    <i class="fas fa-play"></i> Play
-                </button>
-                <button class="btn-secondary" onclick="loadDemucsStemToOutput('${stemName}')">
-                    <i class="fas fa-arrow-right"></i> Load to Output
-                </button>
-                <button class="btn-secondary" onclick="downloadDemucsStem('${stemName}')">
-                    <i class="fas fa-download"></i> Download
-                </button>
-            </div>
-        `;
-        modalBody.appendChild(stemDiv);
-    });
-    
-    // Show modal
-    modal.style.display = 'flex';
+        // Find max length
+        const maxLength = Math.max(...Object.values(decodedStems).map(s => s.length));
+        
+        // Mix stems with gains (skip stems with zero gain)
+        const mixed = new Float32Array(maxLength);
+        let activeStemsCount = 0;
+        
+        for (const [stemName, signal] of Object.entries(decodedStems)) {
+            const gain = window.stemGains[stemName];
+            
+            // Skip if gain is zero or undefined
+            if (gain === undefined || gain === 0) {
+                console.log(`[Demucs] Skipping ${stemName} (gain: ${gain})`);
+                continue;
+            }
+            
+            activeStemsCount++;
+            console.log(`[Demucs] Mixing ${stemName} with gain: ${gain}`);
+            
+            for (let i = 0; i < signal.length; i++) {
+                mixed[i] += signal[i] * gain;
+            }
+        }
+        
+        console.log(`[Demucs] Mixed ${activeStemsCount} active stems`);
+        
+        // Normalize to prevent clipping
+        let maxAbs = 0;
+        for (let i = 0; i < mixed.length; i++) {
+            maxAbs = Math.max(maxAbs, Math.abs(mixed[i]));
+        }
+        if (maxAbs > 1.0) {
+            for (let i = 0; i < mixed.length; i++) {
+                mixed[i] /= maxAbs;
+            }
+            console.log(`[Demucs] Normalized by factor: ${maxAbs.toFixed(2)}`);
+        }
+        
+        // Set as output - keep as Float32Array for playback compatibility
+        outputSignal = mixed;
+        outputWave.setSignal(outputSignal, demucsSeparatedStems.sampleRate);
+        sampleRate = demucsSeparatedStems.sampleRate;
+        syncViews(inputWave.viewStart, inputWave.viewEnd);
+        
+        // Update visualizations
+        await updateFreqView(outputSignal, 'out');
+        if (toggleSpecGlobal && toggleSpecGlobal.checked) {
+            await updateSpecs();
+        }
+        
+        console.log('[Demucs] Mix complete!');
+        alert(`✅ Stems mixed successfully!\n\n` +
+              `Active stems: ${activeStemsCount}\n` +
+              `Total samples: ${mixed.length}\n\n` +
+              `Check the Output Signal viewer and click Play to hear the result.`);
+        
+    } catch (error) {
+        console.error('[Demucs] Mix error:', error);
+        alert(`❌ Failed to mix stems: ${error.message}`);
+    }
 }
 
-window.closeDemucsModal = function() {
-    const modal = document.getElementById('demucsModal');
-    if (modal) {
-        modal.style.display = 'none';
-    }
-};
-
 window.loadDemucsStemToOutput = async function(stemName) {
-    if (!demucsResults || !demucsResults.stems[stemName]) {
+    if (!demucsSeparatedStems || !demucsSeparatedStems.stems[stemName]) {
         console.error('Stem not found:', stemName);
         return;
     }
@@ -808,7 +848,7 @@ window.loadDemucsStemToOutput = async function(stemName) {
         await ensureAudioCtx();
         
         // Decode base64
-        const base64Data = demucsResults.stems[stemName].data;
+        const base64Data = demucsSeparatedStems.stems[stemName].data;
         const binaryData = atob(base64Data);
         const arrayBuffer = new ArrayBuffer(binaryData.length);
         const view = new Uint8Array(arrayBuffer);
@@ -841,14 +881,14 @@ window.loadDemucsStemToOutput = async function(stemName) {
 };
 
 window.downloadDemucsStem = function(stemName) {
-    if (!demucsResults || !demucsResults.stems[stemName]) {
+    if (!demucsSeparatedStems || !demucsSeparatedStems.stems[stemName]) {
         console.error('Stem not found:', stemName);
         return;
     }
     
     try {
         // Decode base64
-        const base64Data = demucsResults.stems[stemName].data;
+        const base64Data = demucsSeparatedStems.stems[stemName].data;
         const binaryData = atob(base64Data);
         const arrayBuffer = new ArrayBuffer(binaryData.length);
         const view = new Uint8Array(arrayBuffer);
@@ -878,7 +918,7 @@ window.downloadDemucsStem = function(stemName) {
 // ============================================================================
 
 async function compareDemucsVsEqualizer() {
-    const btn = document.getElementById('btnCompare');
+    const btn = document.getElementById('btnComparePerformance');
     const originalText = btn ? btn.innerHTML : '';
     
     try {
@@ -925,74 +965,243 @@ function displayComparisonResults(results) {
     const eqTime = results.equalizer?.time || 0;
     const comparison = results.comparison || {};
     
-    const message = `
-📊 COMPARISON RESULTS
-${'='.repeat(50)}
-
-⏱️  PROCESSING TIME:
-   Demucs AI:        ${demucsTime.toFixed(2)}s
-   Your Equalizer:   ${eqTime.toFixed(2)}s
-   
-   ➡️  Your equalizer is ${comparison.equalizer_faster_by || 'N/A'} FASTER!
-   ⚡ Time saved: ${comparison.time_saved || 'N/A'}
-
-🎵 OUTPUT:
-   Demucs:     ${results.demucs?.stems?.length || 0} stems (${results.demucs?.stems?.join(', ') || 'N/A'})
-   Equalizer:  ${results.equalizer?.bands || 0} frequency bands
-
-💡 SUMMARY:
-   • Demucs: Better quality for music separation
-   • Your EQ: Much faster, more flexible control
-${'='.repeat(50)}
+    // Create modal for better visualization
+    let modal = document.getElementById('comparisonModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'comparisonModal';
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    const speedupFactor = eqTime > 0 ? (demucsTime / eqTime).toFixed(1) : 'N/A';
+    const demucsStems = results.demucs?.stems || [];
+    const eqBands = results.equalizer?.bands || 0;
+    
+    modal.innerHTML = `
+        <div style="
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        ">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
+                <h2 style="color: #e5e7eb; margin: 0; font-size: 1.75rem;">
+                    <i class="fas fa-chart-bar" style="color: #8b5cf6;"></i>
+                    Performance Comparison
+                </h2>
+                <button onclick="closeComparisonModal()" style="
+                    background: transparent;
+                    border: none;
+                    color: #9ca3af;
+                    font-size: 1.5rem;
+                    cursor: pointer;
+                    padding: 8px;
+                    transition: color 0.2s;
+                " onmouseover="this.style.color='#e5e7eb'" onmouseout="this.style.color='#9ca3af'">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <!-- Processing Time Comparison -->
+            <div style="
+                background: rgba(30, 41, 59, 0.6);
+                border-radius: 12px;
+                padding: 24px;
+                margin-bottom: 24px;
+                border: 1px solid rgba(148, 163, 184, 0.2);
+            ">
+                <h3 style="color: #e5e7eb; margin: 0 0 20px 0; font-size: 1.25rem;">
+                    ⏱️ Processing Time
+                </h3>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <!-- Demucs AI -->
+                    <div style="
+                        background: rgba(239, 68, 68, 0.1);
+                        border: 2px solid #ef4444;
+                        border-radius: 12px;
+                        padding: 20px;
+                        text-align: center;
+                    ">
+                        <div style="color: #ef4444; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                            <i class="fas fa-brain"></i> Demucs AI
+                        </div>
+                        <div style="color: #e5e7eb; font-size: 2.5rem; font-weight: 700; margin-bottom: 4px;">
+                            ${demucsTime.toFixed(2)}s
+                        </div>
+                        <div style="color: #9ca3af; font-size: 0.875rem;">
+                            ${demucsStems.length} stems separated
+                        </div>
+                    </div>
+                    
+                    <!-- Frequency Equalizer -->
+                    <div style="
+                        background: rgba(16, 185, 129, 0.1);
+                        border: 2px solid #10b981;
+                        border-radius: 12px;
+                        padding: 20px;
+                        text-align: center;
+                    ">
+                        <div style="color: #10b981; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                            <i class="fas fa-sliders-h"></i> Your Equalizer
+                        </div>
+                        <div style="color: #e5e7eb; font-size: 2.5rem; font-weight: 700; margin-bottom: 4px;">
+                            ${eqTime.toFixed(2)}s
+                        </div>
+                        <div style="color: #9ca3af; font-size: 0.875rem;">
+                            ${eqBands} frequency bands
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Speedup Indicator -->
+                <div style="
+                    margin-top: 20px;
+                    padding: 16px;
+                    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
+                    border-radius: 8px;
+                    text-align: center;
+                    border: 1px solid rgba(16, 185, 129, 0.3);
+                ">
+                    <div style="color: #10b981; font-size: 1rem; margin-bottom: 4px;">
+                        ⚡ Your Equalizer is <strong>${speedupFactor}x FASTER</strong>
+                    </div>
+                    <div style="color: #9ca3af; font-size: 0.875rem;">
+                        Time saved: ${comparison.time_saved || 'N/A'}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Feature Comparison -->
+            <div style="
+                background: rgba(30, 41, 59, 0.6);
+                border-radius: 12px;
+                padding: 24px;
+                border: 1px solid rgba(148, 163, 184, 0.2);
+            ">
+                <h3 style="color: #e5e7eb; margin: 0 0 20px 0; font-size: 1.25rem;">
+                    📊 Feature Comparison
+                </h3>
+                
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.2);">
+                            <th style="color: #9ca3af; text-align: left; padding: 12px; font-weight: 600; font-size: 0.875rem;">Feature</th>
+                            <th style="color: #ef4444; text-align: center; padding: 12px; font-weight: 600; font-size: 0.875rem;">Demucs AI</th>
+                            <th style="color: #10b981; text-align: center; padding: 12px; font-weight: 600; font-size: 0.875rem;">Your Equalizer</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
+                            <td style="color: #e5e7eb; padding: 12px;">Processing Speed</td>
+                            <td style="color: #ef4444; text-align: center; padding: 12px;">Slow (${demucsTime.toFixed(1)}s)</td>
+                            <td style="color: #10b981; text-align: center; padding: 12px;">⚡ Fast (${eqTime.toFixed(1)}s)</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
+                            <td style="color: #e5e7eb; padding: 12px;">Separation Quality</td>
+                            <td style="color: #10b981; text-align: center; padding: 12px;">✅ Excellent</td>
+                            <td style="color: #f59e0b; text-align: center; padding: 12px;">⚠️ Good</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
+                            <td style="color: #e5e7eb; padding: 12px;">Real-time Preview</td>
+                            <td style="color: #ef4444; text-align: center; padding: 12px;">❌ No</td>
+                            <td style="color: #10b981; text-align: center; padding: 12px;">✅ Yes</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
+                            <td style="color: #e5e7eb; padding: 12px;">Fine Control</td>
+                            <td style="color: #f59e0b; text-align: center; padding: 12px;">⚠️ Limited</td>
+                            <td style="color: #10b981; text-align: center; padding: 12px;">✅ Precise</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid rgba(148, 163, 184, 0.1);">
+                            <td style="color: #e5e7eb; padding: 12px;">Output</td>
+                            <td style="color: #e5e7eb; text-align: center; padding: 12px;">${demucsStems.join(', ')}</td>
+                            <td style="color: #e5e7eb; text-align: center; padding: 12px;">${eqBands} bands</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #e5e7eb; padding: 12px;">Best For</td>
+                            <td style="color: #e5e7eb; text-align: center; padding: 12px; font-size: 0.875rem;">Studio work</td>
+                            <td style="color: #e5e7eb; text-align: center; padding: 12px; font-size: 0.875rem;">Live editing</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Summary -->
+            <div style="
+                margin-top: 24px;
+                padding: 20px;
+                background: rgba(139, 92, 246, 0.1);
+                border-radius: 12px;
+                border: 1px solid rgba(139, 92, 246, 0.3);
+            ">
+                <h4 style="color: #8b5cf6; margin: 0 0 12px 0; font-size: 1rem;">
+                    💡 Recommendation
+                </h4>
+                <p style="color: #e5e7eb; margin: 0; line-height: 1.6;">
+                    Use <strong style="color: #ef4444;">Demucs AI</strong> for high-quality stem separation in studio projects.
+                    Use <strong style="color: #10b981;">Your Equalizer</strong> for fast, real-time frequency manipulation and live performance.
+                </p>
+            </div>
+            
+            <button onclick="closeComparisonModal()" style="
+                width: 100%;
+                margin-top: 24px;
+                padding: 14px;
+                background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+                border: none;
+                border-radius: 8px;
+                color: white;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: transform 0.2s;
+            " onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+                Close
+            </button>
+        </div>
     `;
     
-    alert(message);
+    modal.style.display = 'flex';
+    
     console.log('Comparison results:', results);
 }
 
+window.closeComparisonModal = function() {
+    const modal = document.getElementById('comparisonModal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+};
+
 // ============================================================================
-// INITIALIZATION - Add this at the VERY END
+// INITIALIZATION
 // ============================================================================
 
-// Wait for DOM to be fully loaded
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🎵 Signal Equalizer Initialized');
-    
-    // Initialize Demucs buttons with safe event listeners
-    const btnDemucs = document.getElementById('btnDemucs');
-    const btnCompare = document.getElementById('btnCompare');
-    
-    if (btnDemucs) {
-        btnDemucs.addEventListener('click', async () => {
-            if (!inputSignal) {
-                alert('Please load an audio file first!');
-                return;
-            }
-            await runDemucsSeparation();
-        });
-        console.log('✅ Demucs button initialized');
-    } else {
-        console.warn('❌ Demucs button not found');
-    }
-    
-    if (btnCompare) {
-        btnCompare.addEventListener('click', async () => {
-            if (!inputSignal) {
-                alert('Please load an audio file first!');
-                return;
-            }
-            await compareDemucsVsEqualizer();
-        });
-        console.log('✅ Compare button initialized');
-    } else {
-        console.warn('❌ Compare button not found');
-    }
     
     // Update speed value displays
     const inSpeed = document.getElementById('inSpeed');
     const outSpeed = document.getElementById('outSpeed');
-    const inSpeedValue = document.querySelector('#inPlay ~ .speed-control .speed-value');
-    const outSpeedValue = document.querySelector('#outPlay ~ .speed-control .speed-value');
+    const inSpeedValue = document.querySelector('.input-panel .speed-value');
+    const outSpeedValue = document.querySelector('.output-panel .speed-value');
     
     if (inSpeed && inSpeedValue) {
         inSpeed.addEventListener('input', () => {
@@ -1008,158 +1217,27 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Check Demucs availability on startup
     checkDemucsAvailability();
+    
+    // Initialize music mode UI if music mode is selected
+    if (modeSelect.value === 'music') {
+        updateMusicModeUI();
+    }
 });
 
-// Check Demucs availability and update button states
 async function checkDemucsAvailability() {
     try {
         const response = await fetch('/api/demucs_check');
         const data = await response.json();
         
-        const btnDemucs = document.getElementById('btnDemucs');
-        const btnCompare = document.getElementById('btnCompare');
-        
         if (data.available) {
             console.log('✅ Demucs is available');
-            if (btnDemucs) {
-                btnDemucs.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-                btnDemucs.innerHTML = '<i class="fas fa-brain"></i> Demucs AI (Ready)';
-            }
-            if (btnCompare) {
-                btnCompare.disabled = false;
-            }
         } else {
             console.warn('❌ Demucs is not available');
-            if (btnDemucs) {
-                btnDemucs.style.background = 'linear-gradient(135deg, #6b7280 0%, #4b5563 100%)';
-                btnDemucs.innerHTML = '<i class="fas fa-brain"></i> Demucs AI (Not Installed)';
-                btnDemucs.title = 'Install: pip install demucs torch torchaudio';
-            }
-            if (btnCompare) {
-                btnCompare.disabled = true;
-            }
         }
     } catch (error) {
         console.error('Failed to check Demucs availability:', error);
     }
 }
-
-
-async function mixAllStems(stemGains) {
-    if (!demucsSeparatedStems) return;
-    
-    try {
-        await ensureAudioCtx();
-        
-        console.log('[Demucs] Mixing stems with gains:', stemGains);
-        
-        // Decode all stems
-        const decodedStems = {};
-        for (const stemName of demucsSeparatedStems.stemNames) {
-            const base64Data = demucsSeparatedStems.stems[stemName].data;
-            const binaryData = atob(base64Data);
-            const arrayBuffer = new ArrayBuffer(binaryData.length);
-            const view = new Uint8Array(arrayBuffer);
-            
-            for (let i = 0; i < binaryData.length; i++) {
-                view[i] = binaryData.charCodeAt(i);
-            }
-            
-            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-            decodedStems[stemName] = audioBuffer.getChannelData(0);
-        }
-        
-        // Find max length
-        const maxLength = Math.max(...Object.values(decodedStems).map(s => s.length));
-        
-        // Mix stems with gains
-        const mixed = new Float32Array(maxLength);
-        for (const [stemName, signal] of Object.entries(decodedStems)) {
-            const gain = stemGains[stemName] || 1.0;
-            for (let i = 0; i < signal.length; i++) {
-                mixed[i] += signal[i] * gain;
-            }
-        }
-        
-        // Normalize to prevent clipping
-        let maxAbs = 0;
-        for (let i = 0; i < mixed.length; i++) {
-            maxAbs = Math.max(maxAbs, Math.abs(mixed[i]));
-        }
-        if (maxAbs > 1.0) {
-            for (let i = 0; i < mixed.length; i++) {
-                mixed[i] /= maxAbs;
-            }
-            console.log(`[Demucs] Normalized by factor: ${maxAbs.toFixed(2)}`);
-        }
-        
-        // Set as output
-        outputSignal = Array.from(mixed);
-        outputWave.setSignal(outputSignal, demucsSeparatedStems.sampleRate);
-        syncViews(inputWave.viewStart, inputWave.viewEnd);
-        
-        // Update visualizations
-        await updateFreqView(outputSignal, 'out');
-        if (toggleSpecGlobal && toggleSpecGlobal.checked) {
-            await updateSpecs();
-        }
-        
-        console.log('[Demucs] Mix complete!');
-        alert('✅ Stems mixed successfully!\n\nCheck the Output Signal viewer to see the result.');
-        
-    } catch (error) {
-        console.error('[Demucs] Mix error:', error);
-        alert(`Failed to mix stems: ${error.message}`);
-    }
-}
-
-// Update the existing modeSelect change listener
-// FIND THIS in your code and REPLACE IT:
-/*
-modeSelect.addEventListener('change', async ()=>{
-    if(modeSelect.value==='generic'){ 
-        presetGroups=null; 
-        renderBands(bandsDiv, scheme, presetGroups); 
-        updateModeUI(); 
-        return; 
-    }
-    try{
-      const resp = await fetch('./presets.json');
-      const data = await resp.json();
-      const p = data[modeSelect.value];
-      presetGroups = (p?.sliders||[]).map(s=>({label:s.label, windows:s.windows||[], gain:1}));
-    }catch(e){ 
-        console.error(e); 
-        presetGroups=null; 
-    }
-    renderBands(bandsDiv, scheme, presetGroups); 
-    updateModeUI(); 
-});
-*/
-
-// WITH THIS (adds updateMusicModeUI call):
-modeSelect.addEventListener('change', async ()=>{
-    if(modeSelect.value==='generic'){ 
-        presetGroups=null; 
-        renderBands(bandsDiv, scheme, presetGroups); 
-        updateModeUI(); 
-        return; 
-    }
-    try{
-      const resp = await fetch('./presets.json');
-      const data = await resp.json();
-      const p = data[modeSelect.value];
-      presetGroups = (p?.sliders||[]).map(s=>({label:s.label, windows:s.windows||[], gain:1}));
-    }catch(e){ 
-        console.error(e); 
-        presetGroups=null; 
-    }
-    renderBands(bandsDiv, scheme, presetGroups); 
-    updateModeUI();
-    
-    // ADD THIS LINE:
-    updateMusicModeUI();
-});
 
 // Call on initial load
 updateMusicModeUI();
