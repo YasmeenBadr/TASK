@@ -389,82 +389,35 @@ export class TimeViewer {
     }
 }
 
-// Draw a spectrum on the canvas with optional scaling
-// scale: 'linear' or 'audiogram' for frequency axis scaling
-// magScale: 'linear' or 'db' for magnitude scaling
-export function drawSpectrum(canvas, magnitudes, sampleRate, scale = 'linear', magScale = 'linear') {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width;
-  const h = canvas.height;
-  
-  // Clear the canvas
-  ctx.clearRect(0, 0, w, h);
-  if (!magnitudes || magnitudes.length === 0) return;
-  
-  const N = magnitudes.length * 2;
-  const binHz = sampleRate / N;
-  const eps = 1e-12;
-  
-  // Normalize magnitudes based on the selected scale
-  let normVals = new Float32Array(magnitudes.length);
-  
-  if (magScale === 'db') {
-    // Find the maximum magnitude for dB scaling
-    let max = eps;
-    for (let i = 0; i < magnitudes.length; i++) {
-      const v = magnitudes[i];
-      if (v > max) max = v;
-    }
-    
-    const dbMax = 20 * Math.log10(max + eps);
-    const dyn = 80; // Dynamic range in dB
+export function drawSpectrum(canvas, magnitudes, sampleRate, scale, magScale='linear'){
+  const ctx=canvas.getContext('2d'); const w=canvas.width, h=canvas.height; ctx.clearRect(0,0,w,h); if(!magnitudes) return;
+  const N = magnitudes.length*2; const binHz=sampleRate/N;
+  const eps=1e-12;
+  let normVals = null;
+  if(magScale==='db'){
+    let max=eps; for(let i=0;i<magnitudes.length;i++){ const v=magnitudes[i]; if(v>max) max=v; }
+    const dbMax = 20*Math.log10(max+eps);
+    const dyn = 80;
     const dbMin = dbMax - dyn;
-    
-    // Convert to dB and normalize to 0-1 range
-    for (let i = 0; i < magnitudes.length; i++) {
-      const db = 20 * Math.log10((magnitudes[i] || 0) + eps);
-      normVals[i] = Math.max(0, Math.min(1, (db - dbMin) / (dbMax - dbMin)));
+    normVals = new Float32Array(magnitudes.length);
+    for(let i=0;i<magnitudes.length;i++){
+      const db = 20*Math.log10((magnitudes[i]||0)+eps);
+      normVals[i] = Math.max(0, Math.min(1, (db - dbMin)/(dbMax - dbMin)));
     }
-  } else {
-    // Linear magnitude scaling
-    let max = eps;
-    for (let i = 0; i < magnitudes.length; i++) {
-      const v = magnitudes[i];
-      if (v > max) max = v;
-    }
-    
-    // Normalize to 0-1 range
-    for (let i = 0; i < magnitudes.length; i++) {
-      normVals[i] = magnitudes[i] / max;
-    }
+  }else{
+    let max=eps; for(let i=0;i<magnitudes.length;i++){ const v=magnitudes[i]; if(v>max) max=v; }
+    normVals = new Float32Array(magnitudes.length);
+    for(let i=0;i<magnitudes.length;i++) normVals[i] = magnitudes[i]/max;
   }
-  
-  // Draw the spectrum line
-  ctx.strokeStyle = "#34d399";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  
-  // Draw the spectrum line with the selected frequency scale
-  for (let i = 0; i < magnitudes.length; i++) {
-    const f = i * binHz;
-    const x = scale === 'audiogram' ? 
-      audiogramX(f, sampleRate, w) : 
-      (i / (magnitudes.length - 1)) * w;
-      
-    const m = normVals[i];
-    const y = (1 - m) * h;
-    
-    if (i === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
+  ctx.strokeStyle="#34d399"; ctx.beginPath();
+  for(let i=0;i<magnitudes.length;i++){
+    const f=i*binHz; const x = scale==='audiogram' ? audiogramX(f, sampleRate, w) : (i/(magnitudes.length-1))*w;
+    const m=normVals[i]; const y = (1-m)*h; if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
   }
-  
   ctx.stroke();
-  
-  // Draw frequency axis ticks and labels based on the selected scale
-  const nyq = sampleRate / 2;
+
+  // Draw frequency axis ticks and labels
+  const nyq = sampleRate/2;
   const baseTicks = [0,100,200,500,1000,2000,5000,10000,15000,20000].filter(f=>f<=nyq);
   ctx.save();
   ctx.strokeStyle = '#374151';
@@ -601,23 +554,7 @@ function colorMap(v) {
     return [r, g, b];
 }
 
-// Convert frequency to x-coordinate for audiogram display
-function audiogramX(f, sr, width) {
-  // Standard audiogram frequencies (Hz)
-  const audiogramFreqs = [125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-  
-  // Convert frequency to octaves above 125Hz
-  const minFreq = 125; // Lowest standard audiogram frequency
-  const maxFreq = Math.min(16000, sr / 2); // Cap at 16kHz or Nyquist
-  
-  // Handle edge cases
-  if (f <= minFreq) return 0;
-  if (f >= maxFreq) return width;
-  
-  // Convert to octaves above minFreq
-  const octaves = Math.log2(f / minFreq);
-  const maxOctaves = Math.log2(maxFreq / minFreq);
-  
-  // Normalize to 0-1 range and scale to width
-  return (octaves / maxOctaves) * width;
+function audiogramX(f, sr, width){
+  // Simple psycho-like scale: map frequency to Bark-like logarithmic scale for UI
+  const fmin=20, fmax=sr/2; const lf=Math.log10(fmin), hf=Math.log10(fmax); const xf=(Math.log10(Math.max(fmin, f))-lf)/(hf-lf); return xf*width;
 }
