@@ -110,36 +110,154 @@ function syncViews(start, end){
     }
 }
 
-async function updateFreqView(signal, which){
-    if(!signal) return;
+// Standard audiogram frequencies (Hz)
+const AUDIOGRAM_FREQUENCIES = [125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+// Convert linear frequency to normalized position (0-1) on audiogram scale
+function freqToAudiogramPos(freq, sampleRate) {
+    // Handle edge cases
+    if (freq <= 0) return 0;
+    if (freq >= sampleRate / 2) return 1;
     
-    // Abort any previous spectrum fetch
-    if(freqAbortController){
+    // Convert to octaves above 125Hz (log2(freq/125))
+    const minFreq = 125; // Lowest standard audiogram frequency
+    const maxFreq = sampleRate / 2;
+    const minOctave = Math.log2(minFreq);
+    const maxOctave = Math.log2(maxFreq);
+    const octave = Math.log2(freq);
+    
+    // Normalize to 0-1 range
+    return (octave - minOctave) / (maxOctave - minOctave);
+}
+
+// Convert normalized position (0-1) back to frequency on audiogram scale
+function audiogramPosToFreq(pos, sampleRate) {
+    const minFreq = 125; // Lowest standard audiogram frequency
+    const maxFreq = sampleRate / 2;
+    const minOctave = Math.log2(minFreq);
+    const maxOctave = Math.log2(maxFreq);
+    
+    // Convert position to octave and then to frequency
+    const octave = minOctave + pos * (maxOctave - minOctave);
+    return Math.pow(2, octave);
+}
+
+// Get the appropriate x-position for a frequency based on the current scale
+function getXPosition(freq, width, scale, sampleRate) {
+    if (scale === 'audiogram') {
+        return freqToAudiogramPos(freq, sampleRate) * width;
+    } else {
+        // Linear scale
+        return (freq / (sampleRate / 2)) * width;
+    }
+}
+
+// Draw frequency markers for the current scale
+function drawFrequencyMarkers(ctx, width, height, scale, sampleRate) {
+    ctx.save();
+    ctx.strokeStyle = '#666';
+    ctx.font = '10px Arial';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    
+    // Draw grid lines and labels
+    const freqs = scale === 'audiogram' ? AUDIOGRAM_FREQUENCIES : 
+        [100, 1000, 2000, 4000, 6000, 8000, 10000, 15000, 20000].filter(f => f <= sampleRate / 2);
+    
+    freqs.forEach(freq => {
+        if (freq > sampleRate / 2) return;
+        
+        const x = getXPosition(freq, width, scale, sampleRate);
+        
+        // Draw grid line
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
+        ctx.stroke();
+        
+        // Draw label
+        ctx.fillText(
+            freq >= 1000 ? `${(freq/1000).toFixed(freq % 1000 === 0 ? 0 : 1)}k` : freq.toString(),
+            x,
+            height - 5
+        );
+    });
+    
+    // Draw axis label
+    ctx.save();
+    ctx.translate(10, height / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('Frequency (Hz)', 0, 0);
+    ctx.restore();
+    
+    ctx.restore();
+}
+
+async function updateFreqView(signal, which) {
+    if(!signal || signal.length === 0) return;
+    
+    // Get the current scale mode
+    const scaleSelect = document.getElementById('scaleSelect');
+    const scaleMode = scaleSelect ? scaleSelect.value : 'linear';
+    
+    // Abort any ongoing frequency analysis
+    if(freqAbortController) {
         freqAbortController.abort();
     }
     
-    // Create new abort controller for this fetch and capture locally to avoid races
     const localFreqCtrl = new AbortController();
     freqAbortController = localFreqCtrl;
     
-    const blob = encodeWavPCM16Mono(signal, sampleRate);
-    const form=new FormData(); 
-    form.append('audio', blob, 'sig.wav');
-    
-    try{
-        const resp=await fetch('/api/spectrum',{
-            method:'POST', 
-            body:form,
+    try {
+        const form = new FormData();
+        const blob = encodeWavPCM16Mono(signal, sampleRate);
+        form.append('audio', blob, 'input.wav');
+        
+        const resp = await fetch('/api/spectrum', {
+            method: 'POST', 
+            body: form,
             signal: localFreqCtrl.signal
         }); 
         
         if(!resp.ok) return;
-        const data=await resp.json(); 
+        const data = await resp.json(); 
         const mags = new Float32Array(data.magnitudes);
-        const target = which==='in' ? freqInCanvas : freqOutCanvas;
+        const target = which === 'in' ? freqInCanvas : freqOutCanvas;
+        
         // Only draw if this response matches the latest controller
         if(localFreqCtrl === freqAbortController && target){
-            drawSpectrum(target, mags, data.sampleRate, scaleSelect.value, magSelect.value);
+            // Get the canvas context
+            const ctx = target.getContext('2d');
+            const width = target.width;
+            const height = target.height;
+            
+            // Clear the canvas
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw frequency markers based on the selected scale
+            drawFrequencyMarkers(ctx, width, height - 20, scaleMode, data.sampleRate);
+            
+            // Draw the spectrum with the selected scale
+            if (scaleMode === 'audiogram') {
+                // For audiogram scale, we need to resample the magnitudes
+                const resampledMags = new Float32Array(AUDIOGRAM_FREQUENCIES.length);
+                const binSize = data.sampleRate / (mags.length * 2);
+                
+                AUDIOGRAM_FREQUENCIES.forEach((freq, i) => {
+                    const bin = Math.round(freq / binSize);
+                    if (bin < mags.length) {
+                        resampledMags[i] = mags[bin];
+                    }
+                });
+                
+                // Draw the resampled magnitudes
+                drawSpectrum(target, resampledMags, data.sampleRate, 'audiogram', 'linear');
+            } else {
+                // For linear scale, use the original magnitudes
+                drawSpectrum(target, mags, data.sampleRate, 'linear', 'linear');
+            }
         }
     }catch(err){
         if(err.name === 'AbortError'){
@@ -315,16 +433,6 @@ btnLoadPreset.addEventListener('click',()=>{
         renderBands(bandsDiv, scheme, presetGroups); 
     }; 
     inp.click(); 
-});
-
-scaleSelect.addEventListener('change',()=>{ 
-    if(inputSignal) updateFreqView(inputSignal, 'in'); 
-    if(outputSignal) updateFreqView(outputSignal, 'out'); 
-});
-
-magSelect.addEventListener('change',()=>{ 
-    if(inputSignal) updateFreqView(inputSignal, 'in'); 
-    if(outputSignal) updateFreqView(outputSignal, 'out'); 
 });
 
 if(toggleSpecGlobal){
@@ -594,28 +702,36 @@ window.playDemucsStem = async function(stemName) {
         alert(`Failed to play ${stemName}: ${error.message}`);
     }
 };
-modeSelect.addEventListener('change', async ()=>{
-    if(modeSelect.value==='generic'){ 
-        presetGroups=null; 
-        renderBands(bandsDiv, scheme, presetGroups); 
-        updateModeUI(); 
-        return; 
+
+modeSelect.addEventListener('change', () => {
+    try {
+        const p = data[modeSelect.value];
+        presetGroups = (p?.sliders||[]).map(s => ({
+            label: s.label, 
+            windows: s.windows || [], 
+            gain: 1
+        }));
+    } catch(e) { 
+        console.error('Error in mode selection:', e); 
+        presetGroups = []; 
     }
-    try{
-      const resp = await fetch('./presets.json');
-      const data = await resp.json();
-      const p = data[modeSelect.value];
-      presetGroups = (p?.sliders||[]).map(s=>({label:s.label, windows:s.windows||[], gain:1}));
-    }catch(e){ 
-        console.error(e); 
-        presetGroups=null; 
-    }
-    renderBands(bandsDiv, scheme, presetGroups); 
-    updateModeUI();
     
-    // ADD THIS LINE:
+    renderBands(bandsDiv, scheme, presetGroups);
     updateMusicModeUI();
 });
+
+// Add event listener for scale selection
+if (scaleSelect) {
+    scaleSelect.addEventListener('change', async () => {
+        // Update both input and output frequency views
+        if (inputSignal) {
+            await updateFreqView(inputSignal, 'in');
+        }
+        if (outputSignal) {
+            await updateFreqView(outputSignal, 'out');
+        }
+    });
+}
 
 fileInput.addEventListener('change', async ()=>{
     const file=fileInput.files[0]; 
