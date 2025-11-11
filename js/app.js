@@ -3,21 +3,6 @@ import {encodeWavPCM16Mono, fetchSpectrogram, playBuffer} from './helpers.js';
 import {generateSignal} from './signals.js';
 import {EQScheme, renderBands} from './eq.js';
 
-// --- Global State Variables ---
-let audioCtx = null;
-let inputSignal = null;
-let outputSignal = null;
-let sampleRate = 44100;
-let applying = false;
-let scheme = null;
-let presetGroups = null;
-let applyTimer = null;
-let demucsMode = false;
-let demucsSeparatedStems = null;
-let specAbortController = null;  // For spectrogram fetches
-let freqAbortController = null;  // For spectrum fetches
-let inputWave, outputWave;
-
 // --- UI Element Declarations ---
 const fileInput=document.getElementById('fileInput');
 const btnGenerate=document.getElementById('btnGenerate');
@@ -31,83 +16,35 @@ const addBand=document.getElementById('addBand');
 const applyEqBtn=document.getElementById('applyEq');
 const bandsDiv=document.getElementById('bands');
 
-function initViewers() {
-    // Create a callback to sync views
-    const onViewChange = (sourceId, start, end) => {
-        if (sourceId === 'input' && outputWave) {
-            // Skip the callback to prevent infinite loop
-            outputWave.setView(start, end, true);
-        } else if (inputWave) {
-            // Skip the callback to prevent infinite loop
-            inputWave.setView(start, end, true);
-        }
-    };
-
-    // Initialize viewers with linked behavior
-    inputWave = new TimeViewer(document.getElementById('inputWave'), 'input', onViewChange);
-    outputWave = new TimeViewer(document.getElementById('outputWave'), 'output', onViewChange);
-
-    // Add reset view buttons
-    document.getElementById('resetInputView').addEventListener('click', () => inputWave.resetView());
-    document.getElementById('resetOutputView').addEventListener('click', () => outputWave.resetView());
-}
-
-// Initialize viewers when the page loads
-function initApp() {
-    initViewers();
-    
-    // Initialize spectrogram toggle
-    if (toggleSpecGlobal) {
-        toggleSpecGlobal.addEventListener('change', () => {
-            if (toggleSpecGlobal.checked) {
-                updateSpecs();
-            } else {
-                // Clear spectrograms when toggled off
-                const ctx1 = inputSpec.getContext('2d'); 
-                const ctx2 = outputSpec.getContext('2d'); 
-                ctx1.clearRect(0, 0, inputSpec.width, inputSpec.height);
-                ctx2.clearRect(0, 0, outputSpec.width, outputSpec.height);
-                
-                // Abort any ongoing fetches
-                if (specAbortController) {
-                    specAbortController.abort();
-                    specAbortController = null;
-                }
-            }
-        });
-        
-        // Initial update if checked by default
-        if (toggleSpecGlobal.checked) {
-            updateSpecs();
-        }
-    }
-}
-
-// Start the app
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initApp);
-} else {
-    initApp();
-}
+const inputWave=new TimeViewer(document.getElementById('inputWave'));
+const outputWave=new TimeViewer(document.getElementById('outputWave'));
 
 const freqInCanvas=document.getElementById('freqIn');
 const freqOutCanvas=document.getElementById('freqOut');
 const inputSpec=document.getElementById('inputSpec');
 const outputSpec=document.getElementById('outputSpec');
 
-// Initialize scheme with sampleRate
-if (!scheme) {
-    scheme = new EQScheme(sampleRate);
-}
+// --- Global State Variables ---
+let audioCtx=null;
+let inputSignal=null;
+let sampleRate=44100;
+let outputSignal=null;
+let applying=false;
+let scheme=new EQScheme(sampleRate);
+let presetGroups=null;
+let applyTimer=null;
+let demucsMode = false;
+let demucsSeparatedStems = null;
+
+// NEW: AbortControllers for fetch operations
+let specAbortController=null;  // For spectrogram fetches
+let freqAbortController=null;  // For spectrum fetches
 
 // --- Utility Functions ---
 
 function syncViews(start, end){ 
-    // This is now handled by the TimeViewer's onViewChange callback
-    if (inputWave && outputWave) {
-        inputWave.setView(start, end);
-        // outputWave will be updated automatically via the callback
-    }
+    inputWave.setView(start,end); 
+    outputWave.setView(start,end); 
 }
 
 async function updateFreqView(signal, which){
@@ -150,85 +87,57 @@ async function updateFreqView(signal, which){
     }
 }
 
-async function updateSpecs() {
-    console.log('updateSpecs called');
-    
-    // Check if spectrograms are enabled
-    if (!toggleSpecGlobal || !toggleSpecGlobal.checked) {
-        console.log('Spectrograms are disabled');
-        return;
+async function updateSpecs(){ 
+    if(!(toggleSpecGlobal?.checked)&&toggleSpecGlobal!==null){ 
+        // Abort any ongoing spectrogram fetches
+        if(specAbortController){
+            specAbortController.abort();
+            specAbortController = null;
+        }
+        
+        const ctx1=inputSpec.getContext('2d'); 
+        const ctx2=outputSpec.getContext('2d'); 
+        ctx1.clearRect(0,0,inputSpec.width,inputSpec.height); 
+        ctx2.clearRect(0,0,outputSpec.width,outputSpec.height); 
+        return; 
     }
     
-    console.log('Updating spectrograms...');
-    console.log('Input signal length:', inputSignal ? inputSignal.length : 'none');
-    console.log('Output signal length:', outputSignal ? outputSignal.length : 'none');
-    
     // Abort any previous spectrogram fetch before starting new one
-    if (specAbortController) {
-        console.log('Aborting previous spectrogram fetch');
+    if(specAbortController){
         specAbortController.abort();
     }
     
-    // Create new abort controller for these fetches
+    // Create new abort controller for these fetches and capture locally to avoid races
     const localSpecCtrl = new AbortController();
     specAbortController = localSpecCtrl;
     
-    // Helper function to handle spectrogram updates
-    async function updateSpectrogram(signal, canvas, name) {
-        if (!signal) {
-            console.log(`No ${name} signal to process`);
-            return;
-        }
-        if (!canvas) {
-            console.error(`No canvas element for ${name} spectrogram`);
-            return;
-        }
-        
-        console.log(`Processing ${name} spectrogram...`);
-        
-        try {
-            const mags = await fetchSpectrogram(signal, sampleRate, localSpecCtrl.signal);
-            console.log(`Fetched ${name} spectrogram data:`, mags ? `Array[${mags.length}]` : 'null');
-            
-            // Only update if this is still the current request and spectrograms are still enabled
-            if (localSpecCtrl !== specAbortController) {
-                console.log('Skipping update - newer request in progress');
-                return;
+    if(inputSignal){ 
+        try{
+            const mags = await fetchSpectrogram(inputSignal, sampleRate, localSpecCtrl.signal); 
+            if(localSpecCtrl === specAbortController && mags && toggleSpecGlobal && toggleSpecGlobal.checked){
+                drawSpectrogram(inputSpec, mags, sampleRate); 
             }
-            
-            if (!toggleSpecGlobal.checked) {
-                console.log('Skipping update - spectrograms disabled');
-                return;
-            }
-            
-            if (!mags) {
-                console.error('No spectrogram data returned');
-                return;
-            }
-            
-            console.log(`Drawing ${name} spectrogram...`);
-            drawSpectrogram(canvas, mags, sampleRate);
-            console.log(`Successfully drew ${name} spectrogram`);
-            
-        } catch (err) {
-            if (err.name === 'AbortError') {
-                console.log(`${name} spectrogram fetch aborted`);
-            } else {
-                console.error(`Error processing ${name} spectrogram:`, err);
+        }catch(err){
+            if(err.name === 'AbortError'){
+                console.log('Spectrogram fetch (input) aborted');
+            }else{
+                console.error('Spectrogram fetch (input) error:', err);
             }
         }
     }
-    
-    // Update both spectrograms in parallel
-    try {
-        console.log('Starting spectrogram updates...');
-        await Promise.all([
-            inputSignal ? updateSpectrogram(inputSignal, inputSpec, 'input') : Promise.resolve(),
-            outputSignal ? updateSpectrogram(outputSignal, outputSpec, 'output') : Promise.resolve()
-        ]);
-        console.log('Finished updating spectrograms');
-    } catch (err) {
-        console.error('Error in spectrogram update:', err);
+    if(outputSignal){ 
+        try{
+            const mags = await fetchSpectrogram(outputSignal, sampleRate, localSpecCtrl.signal); 
+            if(localSpecCtrl === specAbortController && mags && toggleSpecGlobal && toggleSpecGlobal.checked){
+                drawSpectrogram(outputSpec, mags, sampleRate); 
+            }
+        }catch(err){
+            if(err.name === 'AbortError'){
+                console.log('Spectrogram fetch (output) aborted');
+            }else{
+                console.error('Spectrogram fetch (output) error:', err);
+            }
+        }
     }
 }
 
@@ -697,73 +606,17 @@ async function ensureAudioCtx(){
 
 // playBuffer is imported from helpers.js
 
-// Function to play audio with current speed setting
-async function playAudio(signal, speedElement, sourceVar) {
-    await ensureAudioCtx();
-    const speed = parseFloat(speedElement.value);
-    
-    // Stop any currently playing audio
-    if (window[sourceVar]) { 
-        try { 
-            window[sourceVar].stop(); 
-        } catch(_) {} 
-    } 
-    
-    // Play with the current speed setting
-    window[sourceVar] = playBuffer(
-        signal || new Float32Array([0]), 
-        speed, 
-        audioCtx, 
-        sampleRate
-    );
-    
-    window[sourceVar].onended = () => { 
-        window[sourceVar] = null; 
-    };
-}
-
-// Input play button
-document.getElementById('inPlay').addEventListener('click', async () => {
-    await playAudio(inputSignal, document.getElementById('inSpeed'), 'inSource');
+document.getElementById('inPlay').addEventListener('click', async ()=>{ 
+    await ensureAudioCtx(); 
+    if(inSource){ try{inSource.stop()}catch(_){} } 
+    inSource=playBuffer(inputSignal||new Float32Array([0]), +document.getElementById('inSpeed').value, audioCtx, sampleRate); 
+    inSource.onended = ()=>{ inSource = null; };
 });
-
-// Output play button
-document.getElementById('outPlay').addEventListener('click', async () => {
-    await playAudio(outputSignal, document.getElementById('outSpeed'), 'outSource');
-});
-
-// Update speed while playing
-function updatePlaybackSpeed(source, speed) {
-    if (source) {
-        try {
-            source.playbackRate.value = speed;
-        } catch(e) {
-            console.error('Error updating playback speed:', e);
-        }
-    }
-}
-
-// Speed slider event listeners
-document.getElementById('inSpeed').addEventListener('input', (e) => {
-    const speed = parseFloat(e.target.value);
-    const speedValueElement = document.querySelector('#inSpeed').closest('.speed-control').querySelector('.speed-value');
-    if (speedValueElement) {
-        speedValueElement.textContent = speed.toFixed(2) + 'x';
-    } else {
-        console.error('Could not find input speed value element');
-    }
-    updatePlaybackSpeed(inSource, speed);
-});
-
-document.getElementById('outSpeed').addEventListener('input', (e) => {
-    const speed = parseFloat(e.target.value);
-    const speedValueElement = document.querySelector('#outSpeed').closest('.speed-control').querySelector('.speed-value');
-    if (speedValueElement) {
-        speedValueElement.textContent = speed.toFixed(2) + 'x';
-    } else {
-        console.error('Could not find output speed value element');
-    }
-    updatePlaybackSpeed(outSource, speed);
+document.getElementById('outPlay').addEventListener('click', async ()=>{ 
+    await ensureAudioCtx(); 
+    if(outSource){ try{outSource.stop()}catch(_){} } 
+    outSource=playBuffer(outputSignal||new Float32Array([0]), +document.getElementById('outSpeed').value, audioCtx, sampleRate); 
+    outSource.onended = ()=>{ outSource = null; };
 });
 
 document.getElementById('inPause').addEventListener('click', ()=>{ if(audioCtx) audioCtx.suspend(); });
