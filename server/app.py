@@ -10,6 +10,26 @@ import tempfile
 import shutil
 import base64
 import time
+import warnings
+
+# Silence SpeechBrain's internal deprecation warnings
+warnings.filterwarnings("ignore", message="Module 'speechbrain.pretrained' was deprecated")
+
+# Initialize voice separator with error handling
+try:
+    from voice_separation import VoiceSeparator
+    voice_separator = VoiceSeparator(model_name="speechbrain/sepformer-wham")
+    VOICE_SEPARATOR_AVAILABLE = True
+    print("[OK] Voice separator initialized successfully")
+except ImportError as e:
+    print(f"[WARNING] Voice separation not available: {e}")
+    print("To enable voice separation, run: pip install speechbrain torch torchaudio")
+    voice_separator = None
+    VOICE_SEPARATOR_AVAILABLE = False
+except Exception as e:
+    print(f"[ERROR] Error initializing voice separator: {e}")
+    voice_separator = None
+    VOICE_SEPARATOR_AVAILABLE = False
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 app = Flask(__name__, static_folder=str(BASE_DIR), static_url_path='')
@@ -276,26 +296,21 @@ def run_demucs():
     start_time = time.time()
     
     try:
-        # Get audio file
         if 'audio' not in request.files:
             return jsonify({"error": "missing 'audio' file"}), 400
         
         audio_file = request.files['audio']
         
-        # Create temporary input file
         temp_input = os.path.join(UPLOAD_FOLDER, 'demucs_input.wav')
         audio_file.save(temp_input)
         
-        # Clean output folder
         if os.path.exists(OUTPUT_FOLDER):
             shutil.rmtree(OUTPUT_FOLDER)
         os.makedirs(OUTPUT_FOLDER, exist_ok=True)
         
-        # Run Demucs with 4 stems (drums, bass, vocals, other)
-        # REMOVED --two-stems flag to get 4 stems instead of 2
         cmd = [
             'demucs',
-            '-n', 'htdemucs',      # Use pretrained htdemucs model (4 stems)
+            '-n', 'htdemucs',
             '-o', OUTPUT_FOLDER,
             temp_input
         ]
@@ -310,8 +325,6 @@ def run_demucs():
                 "error": f"Demucs failed: {result.stderr}"
             }), 500
         
-        # Find output files
-        # Demucs creates: OUTPUT_FOLDER/htdemucs/demucs_input/{drums.wav, bass.wav, vocals.wav, other.wav}
         model_dir = os.path.join(OUTPUT_FOLDER, 'htdemucs', 'demucs_input')
         
         if not os.path.exists(model_dir):
@@ -320,18 +333,15 @@ def run_demucs():
                 "error": "Demucs output directory not found"
             }), 500
         
-        # Read separated stems
         stems = {}
         stem_names = []
         
-        # Expected 4 stems from htdemucs
         expected_stems = ['drums', 'bass', 'vocals', 'other']
         
         for stem_name in expected_stems:
             stem_path = os.path.join(model_dir, f'{stem_name}.wav')
             
             if os.path.exists(stem_path):
-                # Read WAV file and encode to base64
                 with open(stem_path, 'rb') as f:
                     wav_data = f.read()
                     base64_data = base64.b64encode(wav_data).decode('utf-8')
@@ -348,14 +358,12 @@ def run_demucs():
         print(f"[Demucs] Separation complete in {processing_time:.2f}s")
         print(f"[Demucs] Stems: {stem_names}")
         
-        # Read sample rate from one of the stems
         sample_rate = 44100
         if stem_names:
             first_stem = os.path.join(model_dir, f"{stem_names[0]}.wav")
             with wave.open(first_stem, 'rb') as wf:
                 sample_rate = wf.getframerate()
         
-        # Cleanup
         try:
             os.remove(temp_input)
         except:
@@ -397,7 +405,6 @@ def compare_demucs():
         audio_file = request.files['audio']
         audio_data = audio_file.read()
         
-        # 1. Run Demucs
         demucs_start = time.time()
         
         temp_input = os.path.join(UPLOAD_FOLDER, 'compare_input.wav')
@@ -419,13 +426,11 @@ def compare_demucs():
             demucs_stems = [f.replace('.wav', '') for f in os.listdir(model_dir) 
                           if f.endswith('.wav')]
         
-        # 2. Run Equalizer (simple frequency-based separation)
         eq_start = time.time()
         
         sr, sig = _read_wav_to_mono_float(audio_data)
         scheme = EQScheme(sr)
         
-        # Simulate instrument separation with frequency bands
         bands = [
             {"startHz": 40, "widthHz": 360, "gain": 1.0},
             {"startHz": 400, "widthHz": 400, "gain": 1.0},
@@ -442,13 +447,11 @@ def compare_demucs():
         
         eq_time = time.time() - eq_start
         
-        # Cleanup
         try:
             os.remove(temp_input)
         except:
             pass
         
-        # Calculate comparison metrics
         time_diff = demucs_time - eq_time
         faster_by = f"{abs(time_diff):.2f}s"
         speedup_factor = demucs_time / eq_time if eq_time > 0 else 0
@@ -478,6 +481,131 @@ def compare_demucs():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# SPEECHBRAIN VOICE SEPARATION API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/speechbrain_check', methods=['GET'])
+def check_speechbrain():
+    """Check if SpeechBrain is installed and available"""
+    return jsonify({
+        "available": VOICE_SEPARATOR_AVAILABLE,
+        "message": "SpeechBrain is ready" if VOICE_SEPARATOR_AVAILABLE else "Install: pip install speechbrain torch torchaudio"
+    })
+
+
+@app.route('/api/speechbrain_separate', methods=['POST', 'OPTIONS'])
+def speechbrain_separate():
+    """2-stage voice separation using SpeechBrain SepFormer"""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+    
+    if not VOICE_SEPARATOR_AVAILABLE:
+        return jsonify({
+            "success": False,
+            "error": "SpeechBrain not available. Install: pip install speechbrain torch torchaudio"
+        }), 503
+    
+    print('[SpeechBrain] Starting 2-stage voice separation...')
+    start_time = time.time()
+    
+    try:
+        # Get both mixed audio files
+        if 'audio1' not in request.files or 'audio2' not in request.files:
+            return jsonify({
+                "error": "Missing audio files. Need both 'audio1' and 'audio2'"
+            }), 400
+        
+        # Read both audio files
+        sr1, mix1 = _read_wav_to_mono_float(request.files['audio1'].read())
+        sr2, mix2 = _read_wav_to_mono_float(request.files['audio2'].read())
+        
+        if sr1 != sr2:
+            return jsonify({
+                "error": f"Sample rates must match. Got {sr1}Hz and {sr2}Hz"
+            }), 400
+        
+        sample_rate = sr1
+        
+        # Stage 1: Separate Mix 1 (Old Man + Woman)
+        print('[SpeechBrain] Stage 1: Separating Old Man + Woman...')
+        result1, msg1 = voice_separator.separate(mix1, sample_rate)
+        
+        if result1 is None:
+            return jsonify({
+                "success": False,
+                "error": f"Stage 1 failed: {msg1}"
+            }), 500
+        
+        old_man_audio = result1['sources'][0]  # First source
+        woman_audio = result1['sources'][1]    # Second source
+        
+        # Stage 2: Separate Mix 2 (Man + Child)
+        print('[SpeechBrain] Stage 2: Separating Man + Child...')
+        result2, msg2 = voice_separator.separate(mix2, sample_rate)
+        
+        if result2 is None:
+            return jsonify({
+                "success": False,
+                "error": f"Stage 2 failed: {msg2}"
+            }), 500
+        
+        man_audio = result2['sources'][0]     # First source
+        child_audio = result2['sources'][1]   # Second source
+        
+        # Encode all 4 speakers to base64
+        stems = {}
+        stem_names = ['old_man', 'woman', 'man', 'child']
+        audio_sources = [old_man_audio, woman_audio, man_audio, child_audio]
+        labels = ['Old Man', 'Woman', 'Man', 'Child']
+        
+        for stem_name, source_audio in zip(stem_names, audio_sources):
+            # Normalize and convert to int16
+            source_normalized = source_audio / (np.max(np.abs(source_audio)) + 1e-8) * 0.9
+            source_int = (source_normalized * 32767).astype(np.int16)
+            
+            # Create WAV in memory
+            buffer = io.BytesIO()
+            with wave.open(buffer, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                wf.writeframes(source_int.tobytes())
+            
+            buffer.seek(0)
+            wav_data = buffer.read()
+            base64_data = base64.b64encode(wav_data).decode('utf-8')
+            
+            stems[stem_name] = {
+                'data': base64_data,
+                'size': len(wav_data)
+            }
+            print(f"[SpeechBrain] Encoded: {stem_name}")
+        
+        processing_time = time.time() - start_time
+        
+        print(f"[SpeechBrain] All stages complete in {processing_time:.2f}s")
+        
+        return jsonify({
+            "success": True,
+            "stems": stems,
+            "stemNames": stem_names,
+            "labels": labels,
+            "sampleRate": sample_rate,
+            "processingTime": round(processing_time, 2),
+            "model": "SpeechBrain SepFormer (2-stage)"
+        })
+        
+    except Exception as e:
+        print(f"[SpeechBrain] Exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 if __name__ == '__main__':
