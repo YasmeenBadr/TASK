@@ -1501,6 +1501,48 @@ document.getElementById('outPause').addEventListener('click', ()=>{ if(audioCtx)
 document.getElementById('inStop').addEventListener('click', ()=>{ if(inSource){ try{inSource.stop()}catch{} inSource=null; }});
 document.getElementById('outStop').addEventListener('click', ()=>{ if(outSource){ try{outSource.stop()}catch{} outSource=null; }});
 
+// Speed control functionality
+const inSpeedInput = document.getElementById('inSpeed');
+const outSpeedInput = document.getElementById('outSpeed');
+const inSpeedValue = inSpeedInput?.nextElementSibling;
+const outSpeedValue = outSpeedInput?.nextElementSibling;
+
+// Function to update speed display
+function updateSpeedDisplay(input, displayElement) {
+    if (displayElement) {
+        displayElement.textContent = `${parseFloat(input.value).toFixed(2)}x`;
+    }
+}
+
+// Update speed display when page loads
+if (inSpeedInput && inSpeedValue) {
+    updateSpeedDisplay(inSpeedInput, inSpeedValue);
+}
+if (outSpeedInput && outSpeedValue) {
+    updateSpeedDisplay(outSpeedInput, outSpeedValue);
+}
+
+// Add input event listeners for speed controls
+if (inSpeedInput) {
+    inSpeedInput.addEventListener('input', (e) => {
+        updateSpeedDisplay(e.target, inSpeedValue);
+        // Update playback rate if currently playing
+        if (inSource && inSource.playbackRate) {
+            inSource.playbackRate.value = parseFloat(e.target.value);
+        }
+    });
+}
+
+if (outSpeedInput) {
+    outSpeedInput.addEventListener('input', (e) => {
+        updateSpeedDisplay(e.target, outSpeedValue);
+        // Update playback rate if currently playing
+        if (outSource && outSource.playbackRate) {
+            outSource.playbackRate.value = parseFloat(e.target.value);
+        }
+    });
+}
+
 // ============================================================================
 // VIEWER INTERACTION (Zoom/Pan)
 // ============================================================================
