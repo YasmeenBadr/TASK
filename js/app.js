@@ -160,11 +160,8 @@ function syncViews(start, end){
 
 async function updateFreqView(signal, which) {
     if (!signal || signal.length === 0) {
-        console.log(`[${which}] No signal to process`);
         return;
     }
-
-    console.log(`[${which}] Updating frequency view, signal length: ${signal.length}, sampleRate: ${sampleRate}`);
     
     // Get the current scale mode and magnitude scale
     const scaleMode = scaleSelect ? scaleSelect.value : 'linear';
@@ -175,7 +172,6 @@ async function updateFreqView(signal, which) {
     
     // Abort any previous spectrum fetch for this view
     if (window[controllerRef]) {
-        console.log(`[${which}] Aborting previous frequency update`);
         window[controllerRef].abort();
     }
     
@@ -206,8 +202,6 @@ async function updateFreqView(signal, which) {
         const form = new FormData(); 
         form.append('audio', blob, 'sig.wav');
         
-        console.log(`[${which}] Sending request to /api/spectrum`);
-
         const resp = await fetch('/api/spectrum', {
             method: 'POST', 
             body: form,
@@ -236,11 +230,8 @@ async function updateFreqView(signal, which) {
 
         // Only draw if this response matches the latest controller for this view
         if (localFreqCtrl !== window[controllerRef]) {
-            console.log(`[${which}] Ignoring outdated frequency update`);
             return;
         }
-
-        console.log(`[${which}] Updating canvas, magnitudes:`, mags.length);
 
         // Clear the canvas
         const ctx = target.getContext('2d');
@@ -262,16 +253,13 @@ async function updateFreqView(signal, which) {
                 resampledMags[i] = mags[bin] || 0;
             });
             
-            console.log(`[${which}] Drawing audiogram spectrum with ${resampledMags.length} points`);
             drawSpectrum(target, resampledMags, data.sampleRate || sampleRate, 'audiogram', magScale);
         } else {
-            console.log(`[${which}] Drawing linear spectrum with ${mags.length} points`);
             drawSpectrum(target, mags, data.sampleRate || sampleRate, 'linear', magScale);
         }
 
     } catch (err) {
         if (err.name === 'AbortError') {
-            console.log(`[${which}] Spectrum fetch aborted`);
             return;
         }
         console.error(`[${which}] Spectrum fetch error:`, err);
@@ -310,10 +298,9 @@ async function updateSpecs(){
             }
         }catch(err){
             if(err.name === 'AbortError'){
-                console.log('Spectrogram fetch (input) aborted');
-            }else{
-                console.error('Spectrogram fetch (input) error:', err);
+                return;
             }
+            console.error('Spectrogram fetch (input) error:', err);
         }
     }
     if(outputSignal){ 
@@ -324,10 +311,9 @@ async function updateSpecs(){
             }
         }catch(err){
             if(err.name === 'AbortError'){
-                console.log('Spectrogram fetch (output) aborted');
-            }else{
-                console.error('Spectrogram fetch (output) error:', err);
+                return;
             }
+            console.error('Spectrogram fetch (output) error:', err);
         }
     }
 }
@@ -338,12 +324,25 @@ function currentBandsFromState(){
       for(const g of presetGroups){
         const gain = (typeof g.gain === 'number') ? g.gain : 1;
         for(const w of (g.windows||[])){
-          bands.push({startHz:w.startHz, widthHz:w.widthHz, gain});
+          const startHz = Math.max(0, w.startHz || 0);
+          const widthHz = Math.max(1, w.widthHz || 0);
+          bands.push({startHz, widthHz, gain});
         }
       }
       return bands;
     }
-    return scheme.bands.map(b=>({startHz:b.startHz, widthHz:b.widthHz, gain:b.gain}));
+    // Convert endHz to widthHz if needed and ensure valid values
+    return scheme.bands.map(b => {
+        const startHz = Math.max(0, b.startHz || 0);
+        const widthHz = b.widthHz !== undefined ? 
+            Math.max(1, b.widthHz) : 
+            Math.max(1, (b.endHz || 0) - startHz);
+        return {
+            startHz: startHz,
+            widthHz: widthHz,
+            gain: (typeof b.gain === 'number') ? b.gain : 1
+        };
+    });
 }
 
 async function applyEQ(){ 
@@ -441,19 +440,12 @@ btnLoadPreset.addEventListener('click',()=>{
 
 // Function to update both frequency views
 function updateFrequencyViews() {
-    console.log('Updating frequency views...');
     if (inputSignal) {
-        console.log('Updating input frequency view');
         updateFreqView(inputSignal, 'in').catch(console.error);
-    } else {
-        console.log('No input signal available');
     }
     
     if (outputSignal) {
-        console.log('Updating output frequency view');
         updateFreqView(outputSignal, 'out').catch(console.error);
-    } else {
-        console.log('No output signal available');
     }
 }
 
@@ -464,7 +456,6 @@ if (scaleSelect) {
     scaleSelect = newScaleSelect;
     
     scaleSelect.addEventListener('change', function() {
-        console.log('Scale changed to:', this.value);
         updateFrequencyViews();
     });
 }
@@ -476,7 +467,6 @@ if (magSelect) {
     magSelect = newMagSelect;
     
     magSelect.addEventListener('change', function() {
-        console.log('Magnitude scale changed to:', this.value);
         updateFrequencyViews();
     });
 }
@@ -967,8 +957,6 @@ window.playVoiceStem = async function(stemName) {
     try {
         await ensureAudioCtx();
         
-        console.log(`[VoiceAI] Playing ${stemName}...`);
-        
         // Decode base64
         const base64Data = demucsSeparatedStems.stems[stemName].data;
         const binaryData = atob(base64Data);
@@ -996,8 +984,6 @@ window.playVoiceStem = async function(stemName) {
         source.start();
         outSource = source;
         source.onended = () => { outSource = null; };
-        
-        console.log(`[VoiceAI] Playing ${stemName} - duration: ${audioBuffer.duration}s`);
         
     } catch (error) {
         console.error('[VoiceAI] Play error:', error);
@@ -1142,8 +1128,6 @@ window.playDemucsStem = async function(stemName) {
     try {
         await ensureAudioCtx();
         
-        console.log(`[Demucs] Playing ${stemName}...`);
-        
         // Decode base64
         const base64Data = demucsSeparatedStems.stems[stemName].data;
         const binaryData = atob(base64Data);
@@ -1171,8 +1155,6 @@ window.playDemucsStem = async function(stemName) {
         outSource = source;
         source.onended = () => { outSource = null; };
         
-        console.log(`[Demucs] Playing ${stemName} - duration: ${audioBuffer.duration}s`);
-        
     } catch (error) {
         console.error('[Demucs] Play error:', error);
         alert(`Failed to play ${stemName}: ${error.message}`);
@@ -1186,8 +1168,6 @@ async function runDemucsSeparation() {
     try {
         btnSeparate.disabled = true;
         btnSeparate.innerHTML = '<i class="fas fa-spinner fa-spin"></i> AI Processing... Please wait';
-        
-        console.log('[Demucs] Starting 4-stem separation...');
         
         const blob = encodeWavPCM16Mono(inputSignal, sampleRate);
         const formData = new FormData();
