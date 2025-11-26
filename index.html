@@ -77,97 +77,10 @@
       </div>
     </header>
 
-    <!-- Main Content -->
+    <!-- Main Content: LEFT 1/3 Controls + RIGHT 2/3 Visualizations -->
     <main class="main-content">
-      <!-- Signal Visualization Panels -->
-      <section class="visualization-section">
-        <div class="visualization-panel input-panel">
-          <div class="panel-header">
-            <h2><i class="fas fa-arrow-down"></i> Input Signal</h2>
-            <div class="playback-controls">
-              <div class="control-group">
-                <button id="inPlay" class="btn-control play">
-                  <i class="fas fa-play"></i>
-                </button>
-                <button id="inPause" class="btn-control pause">
-                  <i class="fas fa-pause"></i>
-                </button>
-                <button id="inStop" class="btn-control stop">
-                  <i class="fas fa-stop"></i>
-                </button>
-                <button id="resetInputView" class="btn-control" title="Reset View">
-                  <i class="fas fa-sync-alt"></i>
-                </button>
-              </div>
-              <div class="speed-control">
-                <i class="fas fa-tachometer-alt"></i>
-                <input id="inSpeed" type="range" min="0.25" max="2" step="0.05" value="1" />
-                <span class="speed-value">1.0x</span>
-              </div>
-            </div>
-          </div>
-          
-          <div class="visualization-container">
-            <div class="canvas-wrapper">
-              <canvas id="inputWave" width="1000" height="240"></canvas>
-            </div>
-            <div class="canvas-wrapper">
-              <h3>Frequency Spectrum</h3>
-              <canvas id="freqIn" width="1000" height="200"></canvas>
-            </div>
-            <div class="canvas-wrapper">
-              <div class="canvas-header">
-                <h3>Spectrogram</h3>
-              </div>
-              <canvas id="inputSpec" width="1000" height="200"></canvas>
-            </div>
-          </div>
-        </div>
-
-        <div class="visualization-panel output-panel">
-          <div class="panel-header">
-            <h2><i class="fas fa-arrow-up"></i> Output Signal</h2>
-            <div class="playback-controls">
-              <div class="control-group">
-                <button id="outPlay" class="btn-control play">
-                  <i class="fas fa-play"></i>
-                </button>
-                <button id="outPause" class="btn-control pause">
-                  <i class="fas fa-pause"></i>
-                </button>
-                <button id="outStop" class="btn-control stop">
-                  <i class="fas fa-stop"></i>
-                </button>
-                <button id="resetOutputView" class="btn-control" title="Reset View">
-                  <i class="fas fa-sync-alt"></i>
-                </button>
-              </div>
-              <div class="speed-control">
-                <i class="fas fa-tachometer-alt"></i>
-                <input id="outSpeed" type="range" min="0.25" max="2" step="0.05" value="1" />
-                <span class="speed-value">1.0x</span>
-              </div>
-            </div>
-          </div>
-          
-          <div class="visualization-container">
-            <div class="canvas-wrapper">
-              <canvas id="outputWave" width="1000" height="240"></canvas>
-            </div>
-            <div class="canvas-wrapper">
-              <h3>Frequency Spectrum</h3>
-              <canvas id="freqOut" width="1000" height="200"></canvas>
-            </div>
-            <div class="canvas-wrapper">
-              <h3>Spectrogram</h3>
-              <canvas id="outputSpec" width="1000" height="200"></canvas>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Equalizer Controls at Bottom -->
-      <section class="equalizer-section">
+      <!-- LEFT 1/3: Equalizer Controls -->
+      <aside class="controls-sidebar">
         <div class="eq-header">
           <h2><i class="fas fa-sliders-h"></i> Equalizer Controls</h2>
           <div class="eq-actions">
@@ -187,6 +100,95 @@
           <div class="empty-state">
             <i class="fas fa-sliders-h"></i>
             <p>No subdivisions added yet. Click "Add Subdivision" to start.</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- RIGHT 2/3: Visualizations -->
+      <section class="visualizations-area">
+        <!-- Input Signal Column (Left Half) -->
+        <div class="visualization-column">
+          <div class="column-header">
+            <h2><i class="fas fa-arrow-down"></i> Input Signal</h2>
+            <div class="playback-controls">
+              <button id="inPlay" class="btn-control play">
+                <i class="fas fa-play"></i>
+              </button>
+              <button id="inPause" class="btn-control pause">
+                <i class="fas fa-pause"></i>
+              </button>
+              <button id="inStop" class="btn-control stop">
+                <i class="fas fa-stop"></i>
+              </button>
+              <button id="resetInputView" class="btn-control" title="Reset View">
+                <i class="fas fa-sync-alt"></i>
+              </button>
+              <div class="speed-control">
+                <i class="fas fa-tachometer-alt"></i>
+                <input id="inSpeed" type="range" min="0.25" max="2" step="0.05" value="1" />
+                <span class="speed-value">1.0x</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Waveform -->
+          <div class="viz-item">
+            <canvas id="inputWave" width="800" height="180"></canvas>
+          </div>
+          
+          <!-- Frequency Spectrum -->
+          <div class="viz-item">
+            <h3>Frequency Spectrum</h3>
+            <canvas id="freqIn" width="800" height="140"></canvas>
+          </div>
+          
+          <!-- Spectrogram -->
+          <div class="viz-item spectrogram-container">
+            <h3>Spectrogram</h3>
+            <canvas id="inputSpec" width="800" height="140"></canvas>
+          </div>
+        </div>
+
+        <!-- Output Signal Column (Right Half) -->
+        <div class="visualization-column">
+          <div class="column-header">
+            <h2><i class="fas fa-arrow-up"></i> Output Signal</h2>
+            <div class="playback-controls">
+              <button id="outPlay" class="btn-control play">
+                <i class="fas fa-play"></i>
+              </button>
+              <button id="outPause" class="btn-control pause">
+                <i class="fas fa-pause"></i>
+              </button>
+              <button id="outStop" class="btn-control stop">
+                <i class="fas fa-stop"></i>
+              </button>
+              <button id="resetOutputView" class="btn-control" title="Reset View">
+                <i class="fas fa-sync-alt"></i>
+              </button>
+              <div class="speed-control">
+                <i class="fas fa-tachometer-alt"></i>
+                <input id="outSpeed" type="range" min="0.25" max="2" step="0.05" value="1" />
+                <span class="speed-value">1.0x</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Waveform -->
+          <div class="viz-item">
+            <canvas id="outputWave" width="800" height="180"></canvas>
+          </div>
+          
+          <!-- Frequency Spectrum -->
+          <div class="viz-item">
+            <h3>Frequency Spectrum</h3>
+            <canvas id="freqOut" width="800" height="140"></canvas>
+          </div>
+          
+          <!-- Spectrogram -->
+          <div class="viz-item spectrogram-container">
+            <h3>Spectrogram</h3>
+            <canvas id="outputSpec" width="800" height="140"></canvas>
           </div>
         </div>
       </section>

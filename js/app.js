@@ -258,22 +258,36 @@ magSelect.addEventListener('change',()=>{
     if(inputSignal) updateFreqView(inputSignal, 'in'); 
     if(outputSignal) updateFreqView(outputSignal, 'out'); 
 });
+// Add this to your app.js after the toggleSpecGlobal event listener
 
 if(toggleSpecGlobal){
     toggleSpecGlobal.addEventListener('change', ()=>{
-      if(!toggleSpecGlobal.checked){
-        if(specAbortController){
-            specAbortController.abort();
-            specAbortController = null;
-        }
+        const spectrogramContainers = document.querySelectorAll('.spectrogram-container');
         
-        const ctx1=inputSpec.getContext('2d'); 
-        const ctx2=outputSpec.getContext('2d');
-        ctx1.clearRect(0,0,inputSpec.width,inputSpec.height);
-        ctx2.clearRect(0,0,outputSpec.width,outputSpec.height);
-      }else{
-        updateSpecs();
-      }
+        if(!toggleSpecGlobal.checked){
+            // Hide spectrograms
+            spectrogramContainers.forEach(container => {
+                container.classList.add('hidden');
+            });
+            
+            // Abort ongoing fetches
+            if(specAbortController){
+                specAbortController.abort();
+                specAbortController = null;
+            }
+            
+            // Clear canvases
+            const ctx1=inputSpec.getContext('2d'); 
+            const ctx2=outputSpec.getContext('2d');
+            ctx1.clearRect(0,0,inputSpec.width,inputSpec.height);
+            ctx2.clearRect(0,0,outputSpec.width,outputSpec.height);
+        }else{
+            // Show spectrograms
+            spectrogramContainers.forEach(container => {
+                container.classList.remove('hidden');
+            });
+            updateSpecs();
+        }
     });
 }
 
@@ -342,7 +356,7 @@ function setupMusicAIMode() {
                 <div>
                     <h3 style="margin: 0; color: #e5e7eb; font-size: 1.125rem; font-weight: 600;">AI-Powered Separation</h3>
                     <p style="margin: 4px 0 0 0; color: #9ca3af; font-size: 0.875rem;">
-                        Use Demucs AI to separate drums, bass, vocals, and other instruments
+                        Use Demucs AI to separate drums, bass, vocals, and Instruments
                     </p>
                 </div>
             </div>
@@ -1114,15 +1128,31 @@ modeSelect.addEventListener('change', async ()=>{
         updateMusicModeUI();
         return; 
     }
+    
     try{
       const resp = await fetch('./presets.json');
+      if (!resp.ok) {
+        throw new Error(`Failed to load presets: ${resp.status}`);
+      }
       const data = await resp.json();
       const p = data[modeSelect.value];
-      presetGroups = (p?.sliders||[]).map(s=>({label:s.label, windows:s.windows||[], gain:1}));
+      
+      if (!p || !p.sliders) {
+        console.error(`No preset found for mode: ${modeSelect.value}`);
+        presetGroups = [];
+      } else {
+        presetGroups = p.sliders.map(s=>({
+          label: s.label, 
+          windows: s.windows || [], 
+          gain: typeof s.gain === 'number' ? s.gain : 1
+        }));
+        console.log(`Loaded ${presetGroups.length} preset groups for ${modeSelect.value}`);
+      }
     }catch(e){ 
-        console.error(e); 
-        presetGroups=null; 
+        console.error('Failed to load presets:', e); 
+        presetGroups=[]; 
     }
+    
     renderBands(bandsDiv, scheme, presetGroups); 
     updateModeUI();
     updateMusicModeUI();

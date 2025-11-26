@@ -68,9 +68,13 @@ export function renderBands(bandsDiv, scheme, presetGroups){
       div.className='band';
       // Insert the HTML structure for a single preset group control (label + single gain slider).
       // g.gain??1 uses nullish coalescing to default gain to 1.
-      div.innerHTML=`<strong style="grid-column: span 1; color:#e5e7eb">${g.label||('Group '+(idx+1))}</strong>
-      <label style="grid-column: span 5;">Gain 0-2<input type="range" min="0" max="2" step="0.01" value="${g.gain??1}"></label>
-      <span class="gainVal">${(g.gain??1).toFixed(2)}x</span>`;
+      div.innerHTML=`
+  <strong style="grid-column: span 4; color:#e5e7eb; font-size: 0.95rem;">${g.label||('Group '+(idx+1))}</strong>
+  <label style="grid-column: span 3; display: flex; flex-direction: column; gap: 0.25rem;">
+    <span style="color: var(--text-secondary); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;">GAIN 0-2</span>
+    <input type="range" min="0" max="2" step="0.01" value="${g.gain??1}">
+  </label>
+  <span class="gainVal" style="grid-column: span 1; text-align: center; font-size: 0.9rem; min-width: 3rem;">${(g.gain??1).toFixed(2)}x</span>`;
 
       const gainR = div.querySelector('input'); // Get the gain range input.
       const span=div.querySelector('.gainVal'); // Get the gain display span.
