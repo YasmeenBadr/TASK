@@ -765,3 +765,53 @@ select:focus {
   font-size: 0.85rem;
   white-space: nowrap; /* ✅ Prevent wrapping */
 }
+
+
+/* ============================================================================
+   AI TOGGLE STYLES - Next to Apply EQ button
+   ============================================================================ */
+#ai-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border);
+}
+
+.compact-ai-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.compact-ai-toggle:hover {
+  border-color: var(--primary);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.compact-ai-toggle.active {
+  border-color: var(--success);
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.compact-ai-toggle .toggle-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Adjust eq-actions to accommodate the new toggle */
+.eq-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}

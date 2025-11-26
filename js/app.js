@@ -258,7 +258,6 @@ magSelect.addEventListener('change',()=>{
     if(inputSignal) updateFreqView(inputSignal, 'in'); 
     if(outputSignal) updateFreqView(outputSignal, 'out'); 
 });
-// Add this to your app.js after the toggleSpecGlobal event listener
 
 if(toggleSpecGlobal){
     toggleSpecGlobal.addEventListener('change', ()=>{
@@ -311,6 +310,16 @@ function updateMusicModeUI() {
     const existingVoicePanel = document.getElementById('voiceAIControlPanel');
     if (existingVoicePanel) existingVoicePanel.remove();
     
+    // Clear AI toggle container
+    const aiToggleContainer = document.getElementById('ai-toggle-container');
+    if (aiToggleContainer) {
+        aiToggleContainer.innerHTML = '';
+    }
+    
+    // Reset modes
+    demucsMode = false;
+    voiceAIMode = false;
+    
     // Handle Music Mode
     if (mode === 'music') {
         setupMusicAIMode();
@@ -329,43 +338,23 @@ function updateMusicModeUI() {
 // ============================================================================
 
 function setupMusicAIMode() {
-    const demucsHTML = `
-        <div class="demucs-mode-toggle" style="
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(99, 102, 241, 0.1) 100%);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: all 0.3s ease;
-        ">
-            <div style="display: flex; align-items: center; gap: 16px;">
-                <div style="
-                    width: 48px;
-                    height: 48px;
-                    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-                    border-radius: 12px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                ">
-                    <i class="fas fa-brain" style="color: white; font-size: 1.5rem;"></i>
+    // Add AI toggle to header
+    const aiToggleContainer = document.getElementById('ai-toggle-container');
+    if (aiToggleContainer) {
+        aiToggleContainer.innerHTML = `
+            <label class="compact-ai-toggle" id="musicAIToggle">
+                <input type="checkbox" id="demucsModeToggle" style="display: none;" />
+                <i class="fas fa-brain" style="color: #3b82f6;"></i>
+                <span class="toggle-label">AI Separation</span>
+                <div class="toggle-switch" style="margin-left: 0.5rem;">
+                    <span class="slider"></span>
                 </div>
-                <div>
-                    <h3 style="margin: 0; color: #e5e7eb; font-size: 1.125rem; font-weight: 600;">AI-Powered Separation</h3>
-                    <p style="margin: 4px 0 0 0; color: #9ca3af; font-size: 0.875rem;">
-                        Use Demucs AI to separate drums, bass, vocals, and Instruments
-                    </p>
-                </div>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="demucsModeToggle" />
-                <span class="slider"></span>
             </label>
-        </div>
-        
+        `;
+    }
+
+    // Add detailed controls to bands container
+    const demucsHTML = `
         <div id="demucsControlPanel" style="display: none; margin-bottom: 20px;">
             <div style="
                 text-align: center;
@@ -394,17 +383,30 @@ function setupMusicAIMode() {
     bandsDiv.insertAdjacentHTML('afterbegin', demucsHTML);
     
     const toggle = document.getElementById('demucsModeToggle');
+    const toggleLabel = document.getElementById('musicAIToggle');
     const controlPanel = document.getElementById('demucsControlPanel');
     
-    toggle.addEventListener('change', () => {
-        demucsMode = toggle.checked;
-        controlPanel.style.display = toggle.checked ? 'block' : 'none';
-        
-        const frequencyBands = bandsDiv.querySelectorAll('.band:not(.demucs-stem-control):not(.voice-ai-stem)');
-        frequencyBands.forEach(band => {
-            band.style.display = toggle.checked ? 'none' : 'grid';
+    if (toggleLabel) {
+        toggleLabel.addEventListener('click', () => {
+            const isChecked = !toggle.checked;
+            toggle.checked = isChecked;
+            demucsMode = isChecked;
+            
+            // Update toggle appearance
+            toggleLabel.classList.toggle('active', isChecked);
+            
+            // Show/hide control panel
+            if (controlPanel) {
+                controlPanel.style.display = isChecked ? 'block' : 'none';
+            }
+            
+            // Show/hide frequency bands
+            const frequencyBands = bandsDiv.querySelectorAll('.band:not(.demucs-stem-control):not(.voice-ai-stem)');
+            frequencyBands.forEach(band => {
+                band.style.display = isChecked ? 'none' : 'grid';
+            });
         });
-    });
+    }
     
     const btnSeparate = document.getElementById('btnSeparateStems');
     if (btnSeparate) {
@@ -423,43 +425,23 @@ function setupMusicAIMode() {
 // ============================================================================
 
 function setupVoicesAIMode() {
-    const voiceAIHTML = `
-        <div class="voice-ai-toggle" style="
-            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(59, 130, 246, 0.1) 100%);
-            border: 1px solid rgba(139, 92, 246, 0.3);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: all 0.3s ease;
-        ">
-            <div style="display: flex; align-items: center; gap: 16px;">
-                <div style="
-                    width: 48px;
-                    height: 48px;
-                    background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
-                    border-radius: 12px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                ">
-                    <i class="fas fa-microphone" style="color: white; font-size: 1.5rem;"></i>
+    // Add AI toggle to header
+    const aiToggleContainer = document.getElementById('ai-toggle-container');
+    if (aiToggleContainer) {
+        aiToggleContainer.innerHTML = `
+            <label class="compact-ai-toggle" id="voiceAIToggle">
+                <input type="checkbox" id="voiceAIModeToggle" style="display: none;" />
+                <i class="fas fa-microphone" style="color: #8b5cf6;"></i>
+                <span class="toggle-label">AI Voices</span>
+                <div class="toggle-switch" style="margin-left: 0.5rem;">
+                    <span class="slider"></span>
                 </div>
-                <div>
-                    <h3 style="margin: 0; color: #e5e7eb; font-size: 1.125rem; font-weight: 600;">AI Voice Separation</h3>
-                    <p style="margin: 4px 0 0 0; color: #9ca3af; font-size: 0.875rem;">
-                        Use SpeechBrain SepFormer to separate multiple speakers
-                    </p>
-                </div>
-            </div>
-            <label class="toggle-switch">
-                <input type="checkbox" id="voiceAIModeToggle" />
-                <span class="slider"></span>
             </label>
-        </div>
-        
+        `;
+    }
+
+    // Add detailed controls to bands container
+    const voiceAIHTML = `
         <div id="voiceAIControlPanel" style="display: none; margin-bottom: 20px;">
             <div style="margin-bottom: 20px;">
                 <p style="color: #e5e7eb; margin-bottom: 12px; font-size: 0.95rem; text-align: center;">
@@ -539,17 +521,35 @@ function setupVoicesAIMode() {
     
     // Setup toggle event
     const toggle = document.getElementById('voiceAIModeToggle');
+    const toggleLabel = document.getElementById('voiceAIToggle');
     const controlPanel = document.getElementById('voiceAIControlPanel');
     
-    toggle.addEventListener('change', () => {
-        voiceAIMode = toggle.checked;
-        controlPanel.style.display = toggle.checked ? 'block' : 'none';
-        
-        const frequencyBands = bandsDiv.querySelectorAll('.band:not(.voice-ai-stem):not(.demucs-stem-control)');
-        frequencyBands.forEach(band => {
-            band.style.display = toggle.checked ? 'none' : 'grid';
+    if (toggleLabel) {
+        toggleLabel.addEventListener('click', () => {
+            const isChecked = !toggle.checked;
+            toggle.checked = isChecked;
+            voiceAIMode = isChecked;
+            
+            // Update toggle appearance
+            toggleLabel.classList.toggle('active', isChecked);
+            
+            // Show/hide control panel
+            if (controlPanel) {
+                controlPanel.style.display = isChecked ? 'block' : 'none';
+            }
+            
+            // Show/hide frequency bands
+            const frequencyBands = bandsDiv.querySelectorAll('.band:not(.voice-ai-stem):not(.demucs-stem-control)');
+            frequencyBands.forEach(band => {
+                band.style.display = isChecked ? 'none' : 'grid';
+            });
+            
+            // Check SpeechBrain availability when toggled on
+            if (isChecked) {
+                checkSpeechBrainAvailability();
+            }
         });
-    });
+    }
     
     // Setup separation button
     const btnSeparate = document.getElementById('btnSeparateVoices');
