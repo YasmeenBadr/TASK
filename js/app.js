@@ -3,6 +3,75 @@ import {encodeWavPCM16Mono, fetchSpectrogram, playBuffer} from './helpers.js';
 import {generateSignal} from './signals.js';
 import {EQScheme, renderBands} from './eq.js';
 
+// Simple FFT implementation for frequency analysis
+class FFT {
+  constructor(size, sampleRate) {
+    this.size = size;
+    this.sampleRate = sampleRate;
+    this.spectrum = new Float32Array(size);
+    this.real = new Float32Array(size);
+    this.imag = new Float32Array(size);
+  }
+  
+  forward(input) {
+    const n = this.size;
+    
+    // Copy input to real part, zero out imaginary
+    for (let i = 0; i < n; i++) {
+      this.real[i] = i < input.length ? input[i] : 0;
+      this.imag[i] = 0;
+    }
+    
+    // Bit reversal
+    let j = 0;
+    for (let i = 0; i < n - 1; i++) {
+      if (i < j) {
+        [this.real[i], this.real[j]] = [this.real[j], this.real[i]];
+        [this.imag[i], this.imag[j]] = [this.imag[j], this.imag[i]];
+      }
+      let k = n / 2;
+      while (k <= j) {
+        j -= k;
+        k /= 2;
+      }
+      j += k;
+    }
+    
+    // FFT
+    for (let len = 2; len <= n; len *= 2) {
+      const angle = -2 * Math.PI / len;
+      const wlen_real = Math.cos(angle);
+      const wlen_imag = Math.sin(angle);
+      
+      for (let i = 0; i < n; i += len) {
+        let w_real = 1;
+        let w_imag = 0;
+        
+        for (let j = 0; j < len / 2; j++) {
+          const u_real = this.real[i + j];
+          const u_imag = this.imag[i + j];
+          const v_real = this.real[i + j + len / 2] * w_real - this.imag[i + j + len / 2] * w_imag;
+          const v_imag = this.real[i + j + len / 2] * w_imag + this.imag[i + j + len / 2] * w_real;
+          
+          this.real[i + j] = u_real + v_real;
+          this.imag[i + j] = u_imag + v_imag;
+          this.real[i + j + len / 2] = u_real - v_real;
+          this.imag[i + j + len / 2] = u_imag - v_imag;
+          
+          const w_real_temp = w_real * wlen_real - w_imag * wlen_imag;
+          w_imag = w_real * wlen_imag + w_imag * wlen_real;
+          w_real = w_real_temp;
+        }
+      }
+    }
+    
+    // Calculate magnitude spectrum
+    for (let i = 0; i < n; i++) {
+      this.spectrum[i] = Math.sqrt(this.real[i] * this.real[i] + this.imag[i] * this.imag[i]);
+    }
+  }
+}
+
 // --- UI Element Declarations ---
 const fileInput=document.getElementById('fileInput');
 const btnGenerate=document.getElementById('btnGenerate');
@@ -16,6 +85,35 @@ const addBand=document.getElementById('addBand');
 const applyEqBtn=document.getElementById('applyEq');
 const bandsDiv=document.getElementById('bands');
 
+// Main tab elements
+const mainTab = document.querySelector('.main-content');
+const comparisonTab = document.getElementById('comparisonTab');
+
+// Tab buttons
+const tabButtons = document.createElement('div');
+tabButtons.className = 'tab-buttons';
+const mainTabBtn = document.createElement('button');
+mainTabBtn.className = 'tab-btn active';
+mainTabBtn.textContent = 'Main View';
+mainTabBtn.onclick = () => switchTab('main');
+
+const comparisonTabBtn = document.createElement('button');
+comparisonTabBtn.className = 'tab-btn';
+comparisonTabBtn.textContent = 'Comparison';
+comparisonTabBtn.onclick = () => switchTab('comparison');
+
+tabButtons.appendChild(mainTabBtn);
+tabButtons.appendChild(comparisonTabBtn);
+
+// Insert tab buttons after the header
+document.querySelector('.app-container').insertBefore(tabButtons, document.querySelector('.main-content'));
+
+// Comparison view elements
+const freqEqCanvas = document.getElementById('freqEq');
+const freqAICanvas = document.getElementById('freqAI');
+const specEqCanvas = document.getElementById('specEq');
+const specAICanvas = document.getElementById('specAI');
+
 const inputWave=new TimeViewer(document.getElementById('inputWave'));
 const outputWave=new TimeViewer(document.getElementById('outputWave'));
 
@@ -23,6 +121,274 @@ const freqInCanvas=document.getElementById('freqIn');
 const freqOutCanvas=document.getElementById('freqOut');
 const inputSpec=document.getElementById('inputSpec');
 const outputSpec=document.getElementById('outputSpec');
+
+// Store the last processed signals for comparison
+let lastEqSignal = null;
+let lastAISignal = null;
+let lastSampleRate = null;
+
+// Function to switch between tabs
+function switchTab(tabName) {
+  if (tabName === 'main') {
+    mainTab.style.display = 'flex';
+    comparisonTab.style.display = 'none';
+    mainTabBtn.classList.add('active');
+    comparisonTabBtn.classList.remove('active');
+  } else if (tabName === 'comparison') {
+    mainTab.style.display = 'none';
+    comparisonTab.style.display = 'block';
+    mainTabBtn.classList.remove('active');
+    comparisonTabBtn.classList.add('active');
+    updateComparisonView();
+  }
+}
+
+// Function to update the comparison view
+let isUpdatingComparison = false;
+let updateScheduled = false;
+
+function updateComparisonView() {
+  // If an update is already scheduled, don't schedule another one
+  if (updateScheduled) {
+    return;
+  }
+  
+  // Schedule the update to run in the next animation frame
+  updateScheduled = true;
+  
+  requestAnimationFrame(() => {
+    try {
+      // Reset the scheduled flag before doing the actual work
+      updateScheduled = false;
+      
+      // Prevent infinite recursion
+      if (isUpdatingComparison) {
+        console.log('Prevented recursive update of comparison view');
+        return;
+      }
+      
+      isUpdatingComparison = true;
+      console.log('updateComparisonView called');
+      
+      // Get canvas elements
+      const freqEqCanvas = document.getElementById('freqEq');
+      const freqAICanvas = document.getElementById('freqAI');
+      const specEqCanvas = document.getElementById('specEq');
+      const specAICanvas = document.getElementById('specAI');
+      
+      console.log('Canvas elements:', { 
+        freqEqCanvas: !!freqEqCanvas, 
+        freqAICanvas: !!freqAICanvas, 
+        specEqCanvas: !!specEqCanvas, 
+        specAICanvas: !!specAICanvas 
+      });
+      
+      // Don't proceed if we don't have a sample rate or any signals
+      if (!lastSampleRate || (!lastEqSignal && !lastAISignal)) {
+        console.log('Not enough data for comparison view:', { 
+          hasSampleRate: !!lastSampleRate, 
+          hasEqSignal: !!lastEqSignal, 
+          hasAISignal: !!lastAISignal,
+          sampleRate: lastSampleRate,
+          eqSignalLength: lastEqSignal ? lastEqSignal.length : 0,
+          aiSignalLength: lastAISignal ? lastAISignal.length : 0
+        });
+        return;
+      }
+      
+      console.log('Updating comparison view with signals:', {
+        hasEqSignal: !!lastEqSignal,
+        hasAISignal: !!lastAISignal,
+        sampleRate: lastSampleRate,
+        eqSignalLength: lastEqSignal ? lastEqSignal.length : 0,
+        aiSignalLength: lastAISignal ? lastAISignal.length : 0
+      });
+      
+      // Get current scale and magnitude settings
+      const scale = scaleSelect ? scaleSelect.value : 'linear';
+      const magScale = magSelect ? magSelect.value : 'linear';
+      
+      // Update frequency response comparison
+      if (freqEqCanvas && freqAICanvas) {
+        // Clear both canvases first
+        const clearCanvas = (canvas) => {
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        };
+        clearCanvas(freqEqCanvas);
+        clearCanvas(freqAICanvas);
+        
+        // Process EQ signal if available
+        if (lastEqSignal) {
+          const eqFreqData = getFrequencyData(lastEqSignal, lastSampleRate);
+          
+          // Find maximum magnitude for consistent scaling
+          const maxMag = Math.max(
+            ...eqFreqData.magnitudes.map(mag => isFinite(mag) ? mag : 0)
+          );
+          
+          // Draw frequency response for EQ
+          drawSpectrum(freqEqCanvas, eqFreqData.magnitudes, lastSampleRate, scale, magScale, maxMag);
+          
+          // If no AI signal, copy EQ to AI canvas for reference
+          if (!lastAISignal) {
+            drawSpectrum(freqAICanvas, eqFreqData.magnitudes, lastSampleRate, scale, magScale, maxMag);
+          }
+        }
+        
+        // Process AI signal if available
+        if (lastAISignal) {
+          const aiFreqData = getFrequencyData(lastAISignal, lastSampleRate);
+          
+          // Find maximum magnitude for consistent scaling
+          const maxMag = Math.max(
+            ...aiFreqData.magnitudes.map(mag => isFinite(mag) ? mag : 0)
+          );
+          
+          // Draw frequency response for AI
+          drawSpectrum(freqAICanvas, aiFreqData.magnitudes, lastSampleRate, scale, magScale, maxMag);
+          
+          // If no EQ signal, copy AI to EQ canvas for reference
+          if (!lastEqSignal) {
+            drawSpectrum(freqEqCanvas, aiFreqData.magnitudes, lastSampleRate, scale, magScale, maxMag);
+          }
+        }
+      }
+      
+      // Update spectrogram comparison in the next frame to prevent UI blocking
+      requestAnimationFrame(() => {
+        try {
+          if (specEqCanvas && specAICanvas) {
+            // Clear both canvases first
+            const clearCanvas = (canvas) => {
+              const ctx = canvas.getContext('2d');
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+            };
+            clearCanvas(specEqCanvas);
+            clearCanvas(specAICanvas);
+            
+            // Process EQ signal if available
+            if (lastEqSignal) {
+              const eqSpec = generateSpectrogramData(lastEqSignal, lastSampleRate);
+              
+              // Find max magnitude for consistent color scaling
+              let maxMag = 0;
+              eqSpec.forEach(row => row.forEach(val => { if (val > maxMag) maxMag = val; }));
+              
+              // Draw spectrogram for EQ
+              drawSpectrogram(specEqCanvas, eqSpec, lastSampleRate, maxMag);
+              
+              // If no AI signal, copy EQ to AI canvas for reference
+              if (!lastAISignal) {
+                drawSpectrogram(specAICanvas, eqSpec, lastSampleRate, maxMag);
+              }
+            }
+            
+            // Process AI signal if available
+            if (lastAISignal) {
+              const aiSpec = generateSpectrogramData(lastAISignal, lastSampleRate);
+              
+              // Find max magnitude for consistent color scaling
+              let maxMag = 0;
+              aiSpec.forEach(row => row.forEach(val => { if (val > maxMag) maxMag = val; }));
+              
+              // Draw spectrogram for AI
+              drawSpectrogram(specAICanvas, aiSpec, lastSampleRate, maxMag);
+              
+              // If no EQ signal, copy AI to EQ canvas for reference
+              if (!lastEqSignal) {
+                drawSpectrogram(specEqCanvas, aiSpec, lastSampleRate, maxMag);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Error in spectrogram update:', error);
+        } finally {
+          // Reset the flag when spectrogram update is complete
+          isUpdatingComparison = false;
+        }
+      });
+      
+    } catch (error) {
+      console.error('Error in updateComparisonView:', error);
+      isUpdatingComparison = false;
+    }
+  });
+}
+
+// Helper function to copy canvas content
+function copyCanvasContent(sourceCanvas, targetCanvas) {
+  if (!sourceCanvas || !targetCanvas) return;
+  
+  // Set target canvas size to match source
+  targetCanvas.width = sourceCanvas.width;
+  targetCanvas.height = sourceCanvas.height;
+  
+  // Copy the content
+  const targetCtx = targetCanvas.getContext('2d');
+  targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+  targetCtx.drawImage(sourceCanvas, 0, 0);
+}
+
+// Helper function to get frequency data from a signal
+function getFrequencyData(signal, sampleRate) {
+  // Simple FFT to get frequency data
+  const fftSize = Math.pow(2, Math.ceil(Math.log2(signal.length)));
+  const fft = new FFT(fftSize, sampleRate);
+  
+  // Apply a window function to reduce spectral leakage
+  const windowedSignal = new Float32Array(fftSize);
+  for (let i = 0; i < Math.min(signal.length, fftSize); i++) {
+    // Apply Hann window
+    const window = 0.5 * (1 - Math.cos(2 * Math.PI * i / (fftSize - 1)));
+    windowedSignal[i] = signal[i] * window;
+  }
+  
+  fft.forward(windowedSignal);
+  
+  return {
+    frequencies: Array.from({length: fftSize/2}, (_, i) => i * sampleRate / fftSize),
+    magnitudes: Array.from(fft.spectrum).slice(0, fftSize/2)
+  };
+}
+
+// Helper function to generate spectrogram data from a signal
+function generateSpectrogramData(signal, sampleRate, fftSize = 1024, hopSize = 256) {
+  const fft = new FFT(fftSize, sampleRate);
+  const spectrogram = [];
+  
+  // Process signal in overlapping windows
+  for (let i = 0; i <= signal.length - fftSize; i += hopSize) {
+    // Apply window function
+    const windowed = new Float32Array(fftSize);
+    for (let j = 0; j < fftSize; j++) {
+      const window = 0.5 * (1 - Math.cos(2 * Math.PI * j / (fftSize - 1))); // Hann window
+      windowed[j] = signal[i + j] * window;
+    }
+    
+    fft.forward(windowed);
+    // Take only the first half (real FFT) and convert to magnitude
+    const magnitudes = [];
+    for (let j = 0; j < fftSize/2; j++) {
+      magnitudes.push(fft.spectrum[j]);
+    }
+    spectrogram.push(magnitudes);
+  }
+  
+  return spectrogram;
+}
+
+// Store signals after processing
+function storeSignalsForComparison(eqSignal, aiSignal, sampleRate) {
+  lastEqSignal = eqSignal;
+  lastAISignal = aiSignal;
+  lastSampleRate = sampleRate;
+  
+  // If we're on the comparison tab, update the view
+  if (comparisonTab.style.display === 'block') {
+    updateComparisonView();
+  }
+}
 
 // --- Global State Variables ---
 let audioCtx=null;
@@ -158,6 +524,14 @@ function syncViews(start, end){
     outputWave.setView(start,end); 
 }
 
+/**
+ * Fetches and displays the frequency spectrum of an audio signal
+ * Makes a POST request to /api/spectrum with the audio data
+ * 
+ * @param {Float32Array} signal - The input audio signal
+ * @param {string} which - 'in' for input signal, 'out' for output signal
+ * @returns {Promise<void>}
+ */
 async function updateFreqView(signal, which) {
     if (!signal || signal.length === 0) {
         return;
@@ -202,6 +576,11 @@ async function updateFreqView(signal, which) {
         const form = new FormData(); 
         form.append('audio', blob, 'sig.wav');
         
+        // Backend API call to get frequency spectrum
+        // Endpoint: /api/spectrum
+        // Method: POST
+        // Request: FormData containing WAV audio file
+        // Response: { magnitudes: number[], sampleRate: number }
         const resp = await fetch('/api/spectrum', {
             method: 'POST', 
             body: form,
@@ -266,6 +645,14 @@ async function updateFreqView(signal, which) {
     }
 }
 
+/**
+ * Updates spectrogram visualizations for input and output signals
+ * Uses fetchSpectrogram helper which calls the /api/spectrogram endpoint
+ * 
+ * The spectrogram shows how the frequency content changes over time
+ * 
+ * @returns {Promise<void>}
+ */
 async function updateSpecs(){ 
     if(!(toggleSpecGlobal?.checked)&&toggleSpecGlobal!==null){ 
         // Abort any ongoing spectrogram fetches
@@ -292,6 +679,11 @@ async function updateSpecs(){
     
     if(inputSignal){ 
         try{
+            // Backend API call to get spectrogram data
+            // Endpoint: /api/spectrogram (called via fetchSpectrogram helper)
+            // Method: POST
+            // Request: WAV audio file and parameters
+            // Response: 2D array of magnitudes [time][frequency]
             const mags = await fetchSpectrogram(inputSignal, sampleRate, localSpecCtrl.signal); 
             if(localSpecCtrl === specAbortController && mags && toggleSpecGlobal && toggleSpecGlobal.checked){
                 drawSpectrogram(inputSpec, mags, sampleRate); 
@@ -369,13 +761,22 @@ async function applyEQ(){
       outputSignal = audioBuf.getChannelData(0).slice();
       outputWave.setSignal(outputSignal, sampleRate);
       syncViews(inputWave.viewStart, inputWave.viewEnd);
+      
+      // Update the output view
       await updateFreqView(outputSignal, 'out');
-       
+      
       if(toggleSpecGlobal && toggleSpecGlobal.checked){
           await updateSpecs();
       }
-       
-      console.log('Apply EQ: done');
+      
+      // Store the EQ processed signal for comparison
+      storeSignalsForComparison(outputSignal, lastAISignal, sampleRate);
+      
+      // Update comparison view if it's active
+      if (comparisonTab && comparisonTab.style.display === 'block') {
+          updateComparisonView();
+      }
+      
     }catch(err){
       console.error('Apply EQ error', err);
     }finally{
@@ -619,7 +1020,7 @@ function setupMusicAIMode() {
             });
         });
     }
-    
+    // separate with AI button
     const btnSeparate = document.getElementById('btnSeparateStems');
     if (btnSeparate) {
         btnSeparate.addEventListener('click', async () => {
@@ -823,16 +1224,40 @@ async function runVoiceAISeparation() {
         console.log(`[SpeechBrain] Separation complete in ${elapsedTime}s`, data.stemNames);
         
         // Store results globally (reuse demucs structure)
-        demucsSeparatedStems = {
+        // Store the AI processed signal for comparison (use the first stem as the main output)
+        if (data.stems && data.stems.length > 0) {
+            // Get the first stem as the main output
+            const mainStem = data.stems[0];
+            if (mainStem.data) {
+                // Convert base64 to Float32Array
+                const binaryData = atob(mainStem.data);
+                const bytes = new Uint8Array(binaryData.length);
+                for (let i = 0; i < binaryData.length; i++) {
+                    bytes[i] = binaryData.charCodeAt(i);
+                }
+                
+                // Decode the audio data
+                const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
+                const aiSignal = audioBuffer.getChannelData(0).slice();
+                
+                // Store the AI signal for comparison
+                storeSignalsForComparison(lastEqSignal, aiSignal, audioBuffer.sampleRate);
+                
+                // Update comparison view if it's active
+                if (comparisonTab.style.display === 'block') {
+                    updateComparisonView();
+                }
+            }
+        }
+        
+        // Display the separated voices
+        displayVoiceAIStemsControls({
             stems: data.stems,
-            stemNames: data.stemNames,
             sampleRate: data.sampleRate,
             processingTime: elapsedTime,
+            labels: data.labels,
             isVoiceMode: true
-        };
-        
-        // Display voice stems
-        displayVoiceAIStemsControls(demucsSeparatedStems);
+        });
         
         alert(`✅ Voice Separation Complete!\n\n` +
               `Processing time: ${elapsedTime}s\n` +
@@ -1159,9 +1584,14 @@ window.playDemucsStem = async function(stemName) {
         console.error('[Demucs] Play error:', error);
         alert(`Failed to play ${stemName}: ${error.message}`);
     }
-};
+}
 
 async function runDemucsSeparation() {
+    if (!inputSignal) {
+        showNotification('Please load an audio file first', 'error');
+        return;
+    }
+
     const btnSeparate = document.getElementById('btnSeparateStems');
     const originalHTML = btnSeparate.innerHTML;
     
@@ -1174,6 +1604,7 @@ async function runDemucsSeparation() {
         formData.append('audio', blob, 'input.wav');
         
         const startTime = performance.now();
+        // separate with AI backend call 
         const response = await fetch('/api/demucs', {
             method: 'POST',
             body: formData
@@ -1202,6 +1633,32 @@ async function runDemucsSeparation() {
             processingTime: elapsedTime
         };
 
+        // Store the AI processed signal for comparison (use the first stem as the main output)
+        if (data.stems && data.stems.length > 0) {
+            // Get the first stem as the main output
+            const mainStem = data.stems[0];
+            if (mainStem.data) {
+                // Convert base64 to Float32Array
+                const binaryData = atob(mainStem.data);
+                const bytes = new Uint8Array(binaryData.length);
+                for (let i = 0; i < binaryData.length; i++) {
+                    bytes[i] = binaryData.charCodeAt(i);
+                }
+                
+                // Decode the audio data
+                const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
+                const aiSignal = audioBuffer.getChannelData(0).slice();
+                
+                // Store the AI signal for comparison
+                storeSignalsForComparison(lastEqSignal, aiSignal, sampleRate);
+                
+                // Update comparison view if it's active
+                if (comparisonTab.style.display === 'block') {
+                    updateComparisonView();
+                }
+            }
+        }
+        
         displayDemucsStemsControls(demucsSeparatedStems);
 
         alert(`✅ AI Separation Complete!\n\n` +

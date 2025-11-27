@@ -79,67 +79,118 @@ def serve_any(filepath):
 
 @app.route('/api/process', methods=['POST', 'OPTIONS'])
 def process_audio():
+    """
+    Process audio with dynamic equalization based on the provided frequency bands.
+    This endpoint applies a multi-band equalizer to the input audio and returns the processed audio.
+    """
     print('[process] start')
+    
+    # Handle CORS preflight request
     if request.method == 'OPTIONS':
-        return ('', 204)
+        return ('', 204)  # No content response for preflight
+    
     try:
+        # Check if audio file is present in the request
         if 'audio' not in request.files:
             return jsonify({"error": "missing 'audio' file"}), 400
+        
+        # Get the equalization scheme from form data
         scheme_json = request.form.get('scheme')
         if not scheme_json:
             return jsonify({"error": "missing 'scheme' json"}), 400
+        
+        # Parse the JSON scheme containing frequency bands
         try:
             scheme_obj = json.loads(scheme_json)
         except Exception as e:
             return jsonify({"error": f"invalid scheme json: {e}"}), 400
 
+        # Read and parse the WAV file
         wav_file = request.files['audio']
         data = wav_file.read()
+        
+        # Extract WAV file properties
         with wave.open(io.BytesIO(data), 'rb') as wf:
-            nchan = wf.getnchannels()
-            sampwidth = wf.getsampwidth()
-            framerate = wf.getframerate()
-            nframes = wf.getnframes()
-            frames = wf.readframes(nframes)
+            nchan = wf.getnchannels()  # Number of channels (1 for mono, 2 for stereo)
+            sampwidth = wf.getsampwidth()  # Sample width in bytes
+            framerate = wf.getframerate()  # Sample rate in Hz
+            nframes = wf.getnframes()  # Total number of frames
+            frames = wf.readframes(nframes)  # Raw audio data
+            
+        # Only support 16-bit PCM audio (2 bytes per sample)
         if sampwidth != 2:
             return jsonify({"error": "only 16-bit PCM supported"}), 400
 
+        # Convert raw bytes to a list of integers (16-bit samples)
         import struct
-        total_samples = len(frames) // 2
+        total_samples = len(frames) // 2  # Each sample is 2 bytes
+        # Unpack little-endian 16-bit integers
         samples = struct.unpack('<' + 'h' * total_samples, frames)
+        
+        # Convert stereo to mono by taking every other sample if stereo
         if nchan > 1:
             samples = samples[::nchan]
+            
+        # Normalize samples to float32 range [-1.0, 1.0]
         sig = [s / 32768.0 for s in samples]
 
+        # Process the equalization bands from the scheme
         bands_in = scheme_obj.get('bands', [])
         print(f"[process] bands received: {len(bands_in)}")
+        
+        # Create an EQ scheme with the audio's sample rate
         scheme = EQScheme(framerate)
+        
+        # Add each frequency band to the EQ scheme
         for b in bands_in:
-            scheme.add_band(b.get('startHz', 0), b.get('widthHz', 0), b.get('gain', 1.0))
+            # Each band has start frequency, width, and gain
+            scheme.add_band(
+                b.get('startHz', 0),     # Start frequency in Hz
+                b.get('widthHz', 0),     # Bandwidth in Hz
+                b.get('gain', 1.0)       # Gain multiplier
+            )
 
+        # Apply Short-Time Fourier Transform (STFT) to the signal
+        # win=1024: FFT window size, hop=256: hop size between windows
         S = stft(sig, win=1024, hop=256)
+        
+        # Create a frequency-domain modifier from the EQ scheme
         modifier = make_modifier_from_scheme(scheme)
+        
+        # Apply the modifier and convert back to time domain
         out = istft(modifier, S, out_len=len(sig))
+        
+        # Ensure the output is within valid range
         out = clamp_signal(out)
 
+        # Convert the processed float samples back to 16-bit integers
         out_int16 = bytearray()
         for v in out:
+            # Clamp to [-1.0, 1.0] and scale to 16-bit range
             iv = int(max(-1.0, min(1.0, v)) * 32767.0)
+            # Convert to little-endian bytes and add to buffer
             out_int16 += int(iv).to_bytes(2, byteorder='little', signed=True)
+            
+        # Create an in-memory WAV file
         buf = io.BytesIO()
         with wave.open(buf, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(framerate)
-            wf.writeframes(bytes(out_int16))
+            wf.setnchannels(1)         # Mono output
+            wf.setsampwidth(2)         # 16-bit samples
+            wf.setframerate(framerate)  # Original sample rate
+            wf.writeframes(bytes(out_int16))  # Write the processed audio data
+            
+        # Prepare the response
         buf.seek(0)
         data_bytes = buf.getvalue()
         print(f'[process] done bytes={len(data_bytes)}')
+        
+        # Return the processed audio as a WAV file
         return Response(data_bytes, mimetype='audio/wav')
+        
     except Exception as e:
+        # Handle any errors during processing
         print('[process] error', e)
         return jsonify({"error": str(e)}), 500
-
 
 def _read_wav_to_mono_float(data_bytes):
     import struct

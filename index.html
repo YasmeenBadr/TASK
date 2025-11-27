@@ -197,6 +197,78 @@
     </main>
   </div>
 
+  <!-- Comparison Tab Content -->
+  <div id="comparisonTab" class="tab-content" style="display: none;">
+    <div class="comparison-container">
+      <div class="comparison-section">
+        <h3>Frequency Response Comparison</h3>
+        <div class="comparison-canvas-container">
+          <div class="canvas-wrapper">
+            <div class="canvas-label">Equalizer</div>
+            <canvas id="freqEq" width="600" height="300"></canvas>
+          </div>
+          <div class="canvas-wrapper">
+            <div class="canvas-label">AI Model</div>
+            <canvas id="freqAI" width="600" height="300"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="comparison-section">
+        <h3>Spectrogram Comparison</h3>
+        <div class="comparison-canvas-container">
+          <div class="canvas-wrapper">
+            <div class="canvas-label">Equalizer</div>
+            <canvas id="specEq" width="600" height="300"></canvas>
+          </div>
+          <div class="canvas-wrapper">
+            <div class="canvas-label">AI Model</div>
+            <canvas id="specAI" width="600" height="300"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  // Initialize canvas dimensions on window resize
+  function initCanvasSizes() {
+    const canvases = document.querySelectorAll('#comparisonTab canvas');
+    const container = document.querySelector('.comparison-canvas-container');
+    if (!container) return;
+    
+    const containerWidth = container.offsetWidth;
+    const canvasWidth = Math.floor((containerWidth - 24) / 2); // Account for gap
+    
+    canvases.forEach(canvas => {
+      // Set display dimensions
+      canvas.style.width = '100%';
+      canvas.style.height = '300px';
+      
+      // Set actual dimensions (handles high DPI displays)
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = 300 * dpr;
+      
+      // Scale the context to ensure crisp rendering
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+    });
+  }
+  
+  // Run on load and resize
+  window.addEventListener('load', initCanvasSizes);
+  window.addEventListener('resize', initCanvasSizes);
+  
+  // Reinitialize when switching to comparison tab
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      if (this.textContent === 'Comparison') {
+        setTimeout(initCanvasSizes, 100); // Small delay to ensure tab is visible
+      }
+    });
+  });
+  </script>
+
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>
