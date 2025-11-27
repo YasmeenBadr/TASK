@@ -142,121 +142,347 @@ def serve_any(filepath):
 # ============================================================================
 # MAIN AUDIO PROCESSING ENDPOINT - FREQUENCY-BASED EQUALIZATION
 # ============================================================================
-
 @app.route('/api/process', methods=['POST', 'OPTIONS'])
 def process_audio():
     """
     Process audio with dynamic equalization based on the provided frequency bands.
-    This endpoint applies a multi-band equalizer to the input audio and returns the processed audio.
+    
+    This endpoint receives an audio file and an EQ scheme (frequency bands with gain settings),
+    applies the equalization in the frequency domain using STFT (Short-Time Fourier Transform),
+    and returns the processed audio as a WAV file.
+    
+    Expected Input:
+        - audio: WAV file (16-bit PCM, mono or stereo)
+        - scheme: JSON string containing frequency bands with startHz, widthHz, and gain
+        
+    Returns:
+        - Processed audio as WAV file (mono, 16-bit PCM)
+        
+    Example scheme JSON:
+        {
+            "sampleRate": 44100,
+            "bands": [
+                {"startHz": 100, "widthHz": 400, "gain": 1.5},
+                {"startHz": 500, "widthHz": 1000, "gain": 0.8}
+            ]
+        }
     """
     print('[process] start')
     
-    # Handle CORS preflight request
+    # ============================================================================
+    # STEP 1: HANDLE CORS PREFLIGHT REQUEST
+    # ============================================================================
+    # CORS (Cross-Origin Resource Sharing) requires browsers to send a preflight
+    # OPTIONS request before the actual POST request. We return 204 (No Content)
+    # to allow the browser to proceed with the real request.
     if request.method == 'OPTIONS':
-        return ('', 204)  # No content response for preflight
+        return ('', 204)
     
     try:
-        # Check if audio file is present in the request
+        # ========================================================================
+        # STEP 2: VALIDATE INPUT - CHECK FOR REQUIRED FILES AND DATA
+        # ========================================================================
+        
+        # Check if the audio file was uploaded
+        # The frontend sends this via FormData.append('audio', blob, 'input.wav')
         if 'audio' not in request.files:
             return jsonify({"error": "missing 'audio' file"}), 400
         
-        # Get the equalization scheme from form data
+        # Check if the EQ scheme was provided
+        # The frontend sends this via FormData.append('scheme', JSON.stringify(...))
         scheme_json = request.form.get('scheme')
         if not scheme_json:
             return jsonify({"error": "missing 'scheme' json"}), 400
         
-        # Parse the JSON scheme containing frequency bands
+        # Parse the JSON string into a Python dictionary
+        # This contains the frequency bands and their gain settings
         try:
             scheme_obj = json.loads(scheme_json)
         except Exception as e:
             return jsonify({"error": f"invalid scheme json: {e}"}), 400
 
-        # Read and parse the WAV file
-        wav_file = request.files['audio']
-        data = wav_file.read()
+        # ========================================================================
+        # STEP 3: READ AND PARSE THE WAV FILE
+        # ========================================================================
         
-        # Extract WAV file properties
+        # Get the uploaded audio file and read its binary data
+        wav_file = request.files['audio']
+        data = wav_file.read()  # This is raw bytes
+        
+        # Use Python's wave module to parse the WAV file header and data
+        # We wrap the bytes in BytesIO to treat them as a file-like object
         with wave.open(io.BytesIO(data), 'rb') as wf:
-            nchan = wf.getnchannels()  # Number of channels (1 for mono, 2 for stereo)
-            sampwidth = wf.getsampwidth()  # Sample width in bytes
-            framerate = wf.getframerate()  # Sample rate in Hz
-            nframes = wf.getnframes()  # Total number of frames
-            frames = wf.readframes(nframes)  # Raw audio data
+            # Extract WAV file properties from the header
+            nchan = wf.getnchannels()      # Number of audio channels
+                                            # 1 = mono, 2 = stereo
             
-        # Only support 16-bit PCM audio (2 bytes per sample)
+            sampwidth = wf.getsampwidth()  # Bytes per sample
+                                            # 2 = 16-bit, 3 = 24-bit, 4 = 32-bit
+            
+            framerate = wf.getframerate()  # Sample rate in Hz
+                                            # Common values: 44100, 48000, 96000
+            
+            nframes = wf.getnframes()      # Total number of audio frames
+                                            # For stereo, each frame contains 2 samples
+            
+            frames = wf.readframes(nframes) # Read all the raw audio data as bytes
+            
+        # ========================================================================
+        # STEP 4: VALIDATE AUDIO FORMAT
+        # ========================================================================
+        
+        # We only support 16-bit PCM (Pulse Code Modulation) audio
+        # This is the most common format for WAV files
+        # sampwidth=2 means 2 bytes per sample (16 bits)
         if sampwidth != 2:
             return jsonify({"error": "only 16-bit PCM supported"}), 400
 
-        # Convert raw bytes to a list of integers (16-bit samples)
+        # ========================================================================
+        # STEP 5: CONVERT RAW BYTES TO NUMERIC SAMPLES
+        # ========================================================================
+        
         import struct
-        total_samples = len(frames) // 2  # Each sample is 2 bytes
-        # Unpack little-endian 16-bit integers
+        
+        # Calculate how many samples we have
+        # Each sample is 2 bytes (16 bits), so divide total bytes by 2
+        total_samples = len(frames) // 2
+        
+        # Unpack binary data into a tuple of integers
+        # Format string breakdown:
+        #   '<'  = little-endian byte order (standard for WAV files)
+        #   'h'  = signed short (16-bit integer, range: -32768 to 32767)
+        #   'h' * total_samples = repeat 'h' for each sample
+        # Result: tuple of integers like (-1234, 5678, -2345, ...)
         samples = struct.unpack('<' + 'h' * total_samples, frames)
         
-        # Convert stereo to mono by taking every other sample if stereo
+        # ========================================================================
+        # STEP 6: CONVERT STEREO TO MONO (IF NEEDED)
+        # ========================================================================
+        
+        # If the audio is stereo (or multi-channel), convert to mono
+        # Stereo data is interleaved: [L1, R1, L2, R2, L3, R3, ...]
+        # We take every nchan-th sample to extract just the left channel
+        # For stereo (nchan=2): samples[::2] gives [L1, L2, L3, ...]
         if nchan > 1:
             samples = samples[::nchan]
-            
-        # Normalize samples to float32 range [-1.0, 1.0]
+        
+        # ========================================================================
+        # STEP 7: NORMALIZE TO FLOATING POINT [-1.0, 1.0]
+        # ========================================================================
+        
+        # Convert integer samples to float for mathematical processing
+        # 16-bit samples range from -32768 to 32767
+        # Dividing by 32768.0 normalizes to approximately [-1.0, 1.0]
+        # This is the standard format for audio processing
         sig = [s / 32768.0 for s in samples]
+        
+        # At this point, sig is a list of floats representing the audio signal
+        # Example: [0.123, -0.456, 0.789, -0.234, ...]
 
-        # Process the equalization bands from the scheme
+        # ========================================================================
+        # STEP 8: PARSE THE EQ SCHEME
+        # ========================================================================
+        
+        # Extract the frequency bands from the scheme
+        # Each band defines a frequency range and gain adjustment
         bands_in = scheme_obj.get('bands', [])
         print(f"[process] bands received: {len(bands_in)}")
         
-        # Create an EQ scheme with the audio's sample rate
+        # Create an EQScheme object with the audio's sample rate
+        # The sample rate determines the maximum frequency we can process (Nyquist frequency)
+        # For 44100 Hz sample rate, max frequency is 22050 Hz
         scheme = EQScheme(framerate)
         
         # Add each frequency band to the EQ scheme
+        # Each band specifies:
+        #   - startHz: Beginning frequency of the band (e.g., 100 Hz)
+        #   - widthHz: Width of the frequency band (e.g., 400 Hz, so 100-500 Hz)
+        #   - gain: Amplitude multiplier (1.0 = no change, >1.0 = boost, <1.0 = cut)
         for b in bands_in:
-            # Each band has start frequency, width, and gain
             scheme.add_band(
-                b.get('startHz', 0),     # Start frequency in Hz
-                b.get('widthHz', 0),     # Bandwidth in Hz
-                b.get('gain', 1.0)       # Gain multiplier
+                b.get('startHz', 0),     # Start frequency in Hz (default: 0)
+                b.get('widthHz', 0),     # Bandwidth in Hz (default: 0)
+                b.get('gain', 1.0)       # Gain multiplier (default: 1.0, no change)
             )
+        
+        # Example:
+        # If bands = [
+        #   {"startHz": 100, "widthHz": 400, "gain": 1.5},   # Boost 100-500 Hz by 50%
+        #   {"startHz": 1000, "widthHz": 2000, "gain": 0.5}  # Cut 1000-3000 Hz by 50%
+        # ]
 
-        # Apply Short-Time Fourier Transform (STFT) to the signal
-        # win=1024: FFT window size, hop=256: hop size between windows
+        # ========================================================================
+        # STEP 9: TRANSFORM TO FREQUENCY DOMAIN (STFT)
+        # ========================================================================
+        
+        # Apply Short-Time Fourier Transform (STFT) to the audio signal
+        # STFT breaks the signal into overlapping time windows and performs FFT on each
+        #
+        # Parameters:
+        #   sig: The audio signal (list of floats)
+        #   win=1024: Window size for FFT (larger = better frequency resolution, worse time resolution)
+        #   hop=256: Hop size between windows (smaller = more overlap, smoother result)
+        #
+        # Result structure (S):
+        # {
+        #     'reals': [[...], [...], ...],  # Real parts of FFT for each time window
+        #     'imags': [[...], [...], ...],  # Imaginary parts of FFT for each time window
+        #     'N': 1024,                      # FFT size
+        #     'hop': 256                      # Hop size
+        # }
+        #
+        # Think of it as converting:
+        # Time domain: [sample1, sample2, sample3, ...]
+        # To frequency domain: [
+        #   [freq_bin1_window1, freq_bin2_window1, ...],  # First time window
+        #   [freq_bin1_window2, freq_bin2_window2, ...],  # Second time window
+        #   ...
+        # ]
         S = stft(sig, win=1024, hop=256)
         
-        # Create a frequency-domain modifier from the EQ scheme
+        # ========================================================================
+        # STEP 10: CREATE FREQUENCY MODIFIER FROM EQ SCHEME
+        # ========================================================================
+        
+        # Convert the EQ scheme into a "modifier" function
+        # This function takes STFT data (frequency domain) and applies the gain adjustments
+        # 
+        # The modifier is a callable function that:
+        #   - Identifies which frequency bins belong to each band
+        #   - Multiplies those bins by the corresponding gain value
+        #
+        # Example:
+        # If we have a band from 100-500 Hz with gain=1.5:
+        #   - At 44100 Hz sample rate with 1024 FFT size:
+        #     - Bin size = 44100 / 1024 ≈ 43 Hz per bin
+        #     - 100 Hz ≈ bin 2, 500 Hz ≈ bin 11
+        #   - Modifier multiplies bins 2-11 by 1.5
         modifier = make_modifier_from_scheme(scheme)
         
-        # Apply the modifier and convert back to time domain
+        # ========================================================================
+        # STEP 11: APPLY EQ AND CONVERT BACK TO TIME DOMAIN (ISTFT)
+        # ========================================================================
+        
+        # Apply the modifier to the STFT data and convert back to time domain
+        # ISTFT (Inverse Short-Time Fourier Transform) reconstructs the audio signal
+        #
+        # Parameters:
+        #   modifier: Function that applies EQ gains to frequency bins
+        #   S: STFT data (frequency domain representation)
+        #   out_len=len(sig): Ensure output length matches input length
+        #
+        # The process:
+        # 1. For each time window in STFT:
+        #    - Apply the modifier (multiply frequency bins by gain values)
+        # 2. Perform inverse FFT on each modified window
+        # 3. Overlap-add the windows to reconstruct the time-domain signal
+        #
+        # Result: List of floats representing the processed audio signal
         out = istft(modifier, S, out_len=len(sig))
         
-        # Ensure the output is within valid range
+        # ========================================================================
+        # STEP 12: CLAMP SIGNAL TO VALID RANGE
+        # ========================================================================
+        
+        # Ensure all samples are within [-1.0, 1.0] range
+        # EQ can cause some samples to exceed this range (clipping)
+        # This function clamps values: if v > 1.0, set to 1.0; if v < -1.0, set to -1.0
         out = clamp_signal(out)
 
-        # Convert the processed float samples back to 16-bit integers
-        out_int16 = bytearray()
+        # ========================================================================
+        # STEP 13: CONVERT BACK TO 16-BIT INTEGERS
+        # ========================================================================
+        
+        # Convert the processed float samples back to 16-bit integer format for WAV
+        out_int16 = bytearray()  # Create an empty byte array
+        
         for v in out:
-            # Clamp to [-1.0, 1.0] and scale to 16-bit range
-            iv = int(max(-1.0, min(1.0, v)) * 32767.0)
-            # Convert to little-endian bytes and add to buffer
+            # Ensure the value is clamped to [-1.0, 1.0] (extra safety)
+            v_clamped = max(-1.0, min(1.0, v))
+            
+            # Scale from [-1.0, 1.0] to [-32767, 32767] (16-bit range)
+            # We use 32767 instead of 32768 for symmetry
+            iv = int(v_clamped * 32767.0)
+            
+            # Convert the integer to 2 bytes (16 bits) in little-endian format
+            # signed=True because audio samples can be negative
+            # Example: -15000 → bytes [0xC8, 0xC5]
             out_int16 += int(iv).to_bytes(2, byteorder='little', signed=True)
             
-        # Create an in-memory WAV file
+        # ========================================================================
+        # STEP 14: CREATE OUTPUT WAV FILE IN MEMORY
+        # ========================================================================
+        
+        # Create an in-memory buffer to hold the WAV file
+        # This avoids writing to disk
         buf = io.BytesIO()
+        
+        # Use Python's wave module to write the WAV file structure
         with wave.open(buf, 'wb') as wf:
-            wf.setnchannels(1)         # Mono output
-            wf.setsampwidth(2)         # 16-bit samples
-            wf.setframerate(framerate)  # Original sample rate
-            wf.writeframes(bytes(out_int16))  # Write the processed audio data
+            # Set WAV file parameters
+            wf.setnchannels(1)          # Output is mono (1 channel)
+            wf.setsampwidth(2)          # 16-bit samples (2 bytes per sample)
+            wf.setframerate(framerate)  # Use the original sample rate (e.g., 44100 Hz)
+            wf.writeframes(bytes(out_int16))  # Write all the processed audio data
             
-        # Prepare the response
+        # The WAV file now has the structure:
+        # [WAV Header (44 bytes)] + [Audio Data (out_int16)]
+        
+        # ========================================================================
+        # STEP 15: PREPARE AND RETURN THE RESPONSE
+        # ========================================================================
+        
+        # Move the buffer pointer to the beginning so we can read all the data
         buf.seek(0)
+        
+        # Get all the bytes from the buffer
         data_bytes = buf.getvalue()
         print(f'[process] done bytes={len(data_bytes)}')
         
-        # Return the processed audio as a WAV file
+        # Return the WAV file as an HTTP response
+        # The browser/JavaScript will receive this as binary data
+        # mimetype='audio/wav' tells the browser this is a WAV audio file
         return Response(data_bytes, mimetype='audio/wav')
         
     except Exception as e:
-        # Handle any errors during processing
+        # ========================================================================
+        # ERROR HANDLING
+        # ========================================================================
+        
+        # If anything goes wrong during processing, catch the exception
+        # Log it to the console and return a JSON error response to the client
         print('[process] error', e)
         return jsonify({"error": str(e)}), 500
+
+
+# ================================================================================
+# SUMMARY OF THE ENTIRE PROCESS
+# ================================================================================
+#
+# 1. Receive WAV file and EQ scheme from frontend
+# 2. Parse WAV file → extract sample rate, convert to mono if needed
+# 3. Normalize samples to float [-1.0, 1.0]
+# 4. Apply STFT (Short-Time Fourier Transform) → convert to frequency domain
+# 5. Create EQ modifier based on frequency bands and gains
+# 6. Apply modifier to frequency bins
+# 7. Apply ISTFT (Inverse STFT) → convert back to time domain
+# 8. Clamp output to valid range
+# 9. Convert back to 16-bit integers
+# 10. Package as WAV file and return to frontend
+#
+# Example Flow:
+# Input:  "song.wav" + [{"startHz":100, "widthHz":400, "gain":1.5}]
+# ↓
+# Time domain: [0.1, -0.2, 0.3, ...] (44100 samples/sec)
+# ↓
+# STFT → Frequency domain: [[freq bins for window 1], [freq bins for window 2], ...]
+# ↓
+# Apply EQ: Multiply bins 100-500 Hz by 1.5
+# ↓
+# ISTFT → Time domain: [0.15, -0.25, 0.35, ...] (bass frequencies boosted)
+# ↓
+# Output: "processed.wav"
+# ================================================================================
 
 def _read_wav_to_mono_float(data_bytes):
     """
