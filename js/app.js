@@ -738,52 +738,87 @@ function currentBandsFromState(){
 }
 
 async function applyEQ(){ 
+    // If there is no input signal, do nothing and exit
     if(!inputSignal) return; 
-    if(applying) { console.warn('Apply EQ ignored: already running'); return; }
+
+    // Prevent re-entrance if an EQ operation is already running
+    if(applying) { 
+        console.warn('Apply EQ ignored: already running'); 
+        return; 
+    }
+
+    // Get the current EQ bands from the UI state
     const bands = currentBandsFromState();
+
+    // Convert the input signal to a WAV Blob (16-bit PCM, mono)
     const blob = encodeWavPCM16Mono(inputSignal, sampleRate);
+
+    // Prepare a FormData object to send to the server
     const form = new FormData(); 
-    form.append('audio', blob, 'input.wav'); 
-    form.append('scheme', JSON.stringify({sampleRate, bands}));
+    form.append('audio', blob, 'input.wav'); // Append audio file
+    form.append('scheme', JSON.stringify({sampleRate, bands})); // Append EQ settings
+
     try{
-      applying = true; 
+      applying = true; // Mark that EQ is currently being applied
+
+      // Disable the Apply EQ button to prevent multiple clicks
       if(applyEqBtn) applyEqBtn.disabled = true; 
-      console.log('Apply EQ: start', {bands});
+
+      console.log('Apply EQ: start', {bands}); // Log for debugging
+
+      // Send request to server-side API to process EQ
       const resp = await fetch('/api/process',{method:'POST', body:form});
+
+      // Handle server errors
       if(!resp.ok){ 
           const text = await resp.text().catch(()=>'<no body>'); 
           console.error('Apply EQ failed', resp.status, text); 
           return; 
       }
+
+      // Get the processed audio as ArrayBuffer
       const arr = await resp.arrayBuffer();
+
+      // Make sure AudioContext is ready
       await ensureAudioCtx();
+
+      // Decode audio data into AudioBuffer
       const audioBuf = await audioCtx.decodeAudioData(arr);
+
+      // Extract the first channel (mono) as Float32Array
       outputSignal = audioBuf.getChannelData(0).slice();
+
+      // Update waveform display with new signal
       outputWave.setSignal(outputSignal, sampleRate);
+
+      // Sync the views between input and output waveform viewers
       syncViews(inputWave.viewStart, inputWave.viewEnd);
       
-      // Update the output view
+      // Update frequency domain view for output
       await updateFreqView(outputSignal, 'out');
       
+      // Update spectrogram if enabled
       if(toggleSpecGlobal && toggleSpecGlobal.checked){
           await updateSpecs();
       }
       
-      // Store the EQ processed signal for comparison
+      // Store processed signal for later comparison
       storeSignalsForComparison(outputSignal, lastAISignal, sampleRate);
       
-      // Update comparison view if it's active
+      // Update comparison view if tab is active
       if (comparisonTab && comparisonTab.style.display === 'block') {
           updateComparisonView();
       }
       
     }catch(err){
-      console.error('Apply EQ error', err);
+      console.error('Apply EQ error', err); // Log any unexpected errors
     }finally{
+      // Re-enable Apply EQ button and reset applying flag
       applying = false; 
       if(applyEqBtn) applyEqBtn.disabled = false;
     }
 }
+
 
 function updateModeUI(){
     if(addBand){
