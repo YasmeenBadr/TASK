@@ -3,121 +3,130 @@ export class TimeViewer {
     constructor(canvas, id, onViewChange = null) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.id = id;
-        this.onViewChange = onViewChange;
+        this.id = id; // 'input' or 'output' identifier
+        this.onViewChange = onViewChange; // Callback when view changes
         
-        // Signal data
+        // Signal data storage
         this.signal = null;
         this.sampleRate = 44100;
         
-        // View state
-        this.viewStart = 0;
-        this.viewEnd = 1;
-        this.viewMinDuration = 0.01; // Minimum view duration in seconds
+        // View state - tracks what portion of signal is visible
+        this.viewStart = 0; // Start time in seconds
+        this.viewEnd = 1;   // End time in seconds
+        this.viewMinDuration = 0.01; // Minimum view duration in seconds (prevent over-zoom)
         
-        // Interaction state
+        // Interaction state for drag/pan functionality
         this.isDragging = false;
-        this.dragStartX = 0;
-        this.dragStartViewStart = 0;
-        this.dragStartViewEnd = 0;
+        this.dragStartX = 0; // Mouse X position when drag started
+        this.dragStartViewStart = 0; // View start when drag began
+        this.dragStartViewEnd = 0;   // View end when drag began
         
-        // Style - Spotify theme
-        this.waveColor = id === 'input' ? '#1DB954' : '#1ed760';
-        this.backgroundColor = '#121212';
-        this.gridColor = '#282828';
-        this.textColor = '#b3b3b3';
-        this.cursorColor = '#ffffff';
-        this.waveLineWidth = 1.5;
-        this.wavePeakColor = '#ffffff';
-        this.cursorX = null;
+        // Style configuration - Spotify-inspired theme
+        this.waveColor = id === 'input' ? '#1DB954' : '#1ed760'; // Green shades
+        this.backgroundColor = '#121212'; // Dark background
+        this.gridColor = '#282828'; // Grid lines
+        this.textColor = '#b3b3b3'; // Text color
+        this.cursorColor = '#ffffff'; // Cursor line color
+        this.waveLineWidth = 1.5; // Waveform line thickness
+        this.wavePeakColor = '#ffffff'; // Color for waveform peaks
+        this.cursorX = null; // Current cursor X position (null when not over canvas)
         
-        // Setup canvas
+        // Initialize canvas properties and event listeners
         this.setupCanvas();
     }
     
     setupCanvas() {
         const canvas = this.canvas;
-        const dpr = window.devicePixelRatio || 1;
+        const dpr = window.devicePixelRatio || 1; // Get device pixel ratio for high-DPI displays
         const rect = canvas.getBoundingClientRect();
         
-        // Set display size (CSS pixels)
+        // Set display size in CSS pixels (what user sees)
         canvas.style.width = rect.width + 'px';
         canvas.style.height = rect.height + 'px';
         
-        // Set actual size in memory (scaled for DPI)
+        // Set actual size in memory (scaled for DPI) for crisp rendering
         canvas.width = rect.width * dpr;
         canvas.height = rect.height * dpr;
         
-        // Normalize coordinate system to use CSS pixels
+        // Normalize coordinate system to use CSS pixels despite high-DPI canvas
         this.ctx.scale(dpr, dpr);
         
-        // Add event listeners
+        // Add event listeners for user interaction
         canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
         canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
         canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
         canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
         canvas.addEventListener('mouseleave', () => {
-            this.cursorX = null;
-            this.draw();
+            this.cursorX = null; // Hide cursor when leaving canvas
+            this.draw(); // Redraw without cursor
         });
     }
     
+    // Set the signal data to display
     setSignal(sig, sr) {
         this.signal = sig;
         this.sampleRate = sr;
         this.viewStart = 0;
-        this.viewEnd = Math.min(5, sig.length / sr); // Default to 5 seconds or signal length
-        this.draw();
+        // Set initial view to show first 5 seconds or full signal if shorter
+        this.viewEnd = Math.min(5, sig.length / sr);
+        this.draw(); // Render the signal
     }
     
+    // Update the visible time range
     setView(start, end, skipCallback = false) {
         if (!this.signal) return;
         
         const duration = this.signal.length / this.sampleRate;
+        // Clamp values to valid ranges
         const newStart = Math.max(0, start);
         const newEnd = Math.min(duration, Math.max(newStart + this.viewMinDuration, end));
         
-        // Only update if the view has actually changed
+        // Only update if view has actually changed (avoid unnecessary redraws)
         if (Math.abs(this.viewStart - newStart) > 1e-9 || Math.abs(this.viewEnd - newEnd) > 1e-9) {
             this.viewStart = newStart;
             this.viewEnd = newEnd;
             
-            // Only trigger callback if not skipped (prevents infinite loop)
+            // Notify parent about view change (for linked viewers), unless skipped
             if (this.onViewChange && !skipCallback) {
                 this.onViewChange(this.id, this.viewStart, this.viewEnd);
             }
             
-            this.draw();
+            this.draw(); // Redraw with new view
         }
     }
     
+    // Zoom in/out around a center point
     zoom(factor, centerX) {
         if (!this.signal) return;
         
         const duration = this.signal.length / this.sampleRate;
+        // Calculate time at mouse position
         const centerTime = this.viewStart + (centerX / this.canvas.width) * (this.viewEnd - this.viewStart);
         
+        // Calculate new view width after zoom
         let newWidth = (this.viewEnd - this.viewStart) * factor;
-        newWidth = Math.max(this.viewMinDuration, Math.min(duration, newWidth));
+        newWidth = Math.max(this.viewMinDuration, Math.min(duration, newWidth)); // Clamp to valid range
         
+        // Calculate new start/end times keeping the center point fixed
         const newStart = Math.max(0, centerTime - (centerX / this.canvas.width) * newWidth);
         const newEnd = Math.min(duration, newStart + newWidth);
         
         this.setView(newStart, newEnd);
     }
     
+    // Pan (scroll) the view horizontally
     pan(dx) {
         if (!this.signal) return;
         
         const duration = this.signal.length / this.sampleRate;
         const viewDuration = this.viewEnd - this.viewStart;
         const timePerPixel = viewDuration / this.canvas.width;
-        const deltaTime = dx * timePerPixel;
+        const deltaTime = dx * timePerPixel; // Convert pixels to time
         
         let newStart = this.viewStart - deltaTime;
         let newEnd = this.viewEnd - deltaTime;
         
-        // Handle boundaries
+        // Handle boundaries - don't pan beyond signal start/end
         if (newStart < 0) {
             newStart = 0;
             newEnd = Math.min(duration, viewDuration);
@@ -129,6 +138,7 @@ export class TimeViewer {
         this.setView(newStart, newEnd);
     }
     
+    // Reset view to show beginning of signal
     resetView() {
         if (!this.signal) return;
         const duration = this.signal.length / this.sampleRate;
@@ -141,12 +151,12 @@ export class TimeViewer {
         this.dragStartX = e.offsetX;
         this.dragStartViewStart = this.viewStart;
         this.dragStartViewEnd = this.viewEnd;
-        this.canvas.style.cursor = 'grabbing';
+        this.canvas.style.cursor = 'grabbing'; // Change cursor to indicate dragging
     }
     
     handleMouseMove(e) {
         const rect = this.canvas.getBoundingClientRect();
-        this.cursorX = e.clientX - rect.left;
+        this.cursorX = e.clientX - rect.left; // Update cursor position relative to canvas
         
         if (this.isDragging) {
             const dx = e.offsetX - this.dragStartX;
@@ -154,26 +164,27 @@ export class TimeViewer {
             const timePerPixel = viewDuration / this.canvas.width;
             const deltaTime = dx * timePerPixel;
             
+            // Update view based on drag distance
             this.setView(
                 this.dragStartViewStart - deltaTime,
                 this.dragStartViewEnd - deltaTime
             );
         }
         
-        this.draw();
+        this.draw(); // Redraw to show updated cursor position
     }
     
     handleMouseUp() {
         this.isDragging = false;
-        this.canvas.style.cursor = 'default';
+        this.canvas.style.cursor = 'default'; // Restore default cursor
     }
     
     handleWheel(e) {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? 0.9 : 1.1; // Zoom in/out factor
+        e.preventDefault(); // Prevent page scroll
+        const delta = e.deltaY > 0 ? 0.9 : 1.1; // Zoom out if scrolling down, in if up
         const rect = this.canvas.getBoundingClientRect();
         const x = e.clientX - rect.left; // x position relative to canvas
-        this.zoom(delta, x);
+        this.zoom(delta, x); // Zoom around mouse position
     }
     
     // Drawing methods
@@ -181,7 +192,7 @@ export class TimeViewer {
         const ctx = this.ctx;
         const c = this.canvas;
         const dpr = window.devicePixelRatio || 1;
-        const width = c.width / dpr;
+        const width = c.width / dpr;  // Convert to CSS pixels
         const height = c.height / dpr;
         
         // Clear canvas
@@ -191,12 +202,13 @@ export class TimeViewer {
         ctx.fillStyle = this.backgroundColor;
         ctx.fillRect(0, 0, width, height);
         
-        if (!this.signal) return;
+        if (!this.signal) return; // Nothing to draw if no signal
         
         const s = this.signal;
         const sr = this.sampleRate;
         const t0 = this.viewStart;
         const t1 = this.viewEnd;
+        // Calculate sample indices for visible range
         const i0 = Math.floor(t0 * sr);
         const i1 = Math.min(s.length - 1, Math.ceil(t1 * sr));
         const span = i1 - i0;
@@ -204,50 +216,52 @@ export class TimeViewer {
         // Draw grid lines
         this.drawGrid(width, height);
         
-        // Draw waveform with gradient
+        // Draw waveform with gradient for visual appeal
         const gradient = ctx.createLinearGradient(0, 0, 0, height);
         gradient.addColorStop(0, this.waveColor);
         gradient.addColorStop(1, this.wavePeakColor);
         
-        // Draw filled waveform
+        // Draw filled waveform (creates the "audio wave" appearance)
         ctx.fillStyle = gradient;
         ctx.beginPath();
         
         // Move to starting point on the left
         ctx.moveTo(0, height / 2);
         
-        // Draw top half of the waveform
+        // Draw top half of the waveform (positive values)
         for (let x = 0; x < width; x++) {
+            // Map canvas x position to signal sample index
             const idx = i0 + Math.floor(span * x / width);
+            // Convert signal value to y position (0.5 = center, 0.4 = amplitude scaling)
             const y = (0.5 - 0.4 * (s[idx] || 0)) * height;
             ctx.lineTo(x, y);
         }
         
-        // Draw bottom half of the waveform in reverse
+        // Draw bottom half of the waveform in reverse (negative values)
         for (let x = width - 1; x >= 0; x--) {
             const idx = i0 + Math.floor(span * x / width);
             const y = (0.5 + 0.4 * (s[idx] || 0)) * height;
             ctx.lineTo(x, y);
         }
         
-        // Close the path and fill
+        // Close the path and fill to create the waveform shape
         ctx.closePath();
         ctx.fill();
         
-        // Draw a subtle stroke around the waveform
+        // Draw a subtle stroke around the waveform for definition
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
         ctx.lineWidth = 0.5;
         ctx.stroke();
         
-        // Draw cursor
+        // Draw cursor if mouse is over canvas
         if (this.cursorX !== null && this.cursorX >= 0 && this.cursorX <= width) {
             ctx.strokeStyle = this.cursorColor;
-            ctx.setLineDash([2, 2]);
+            ctx.setLineDash([2, 2]); // Dashed line for cursor
             ctx.beginPath();
             ctx.moveTo(this.cursorX, 0);
             ctx.lineTo(this.cursorX, height);
             ctx.stroke();
-            ctx.setLineDash([]);
+            ctx.setLineDash([]); // Reset line style
             
             // Show time at cursor position
             const timeAtCursor = t0 + (this.cursorX / width) * (t1 - t0);
@@ -267,7 +281,7 @@ export class TimeViewer {
         ctx.strokeStyle = this.gridColor;
         ctx.lineWidth = 0.5;
         
-        // Horizontal grid lines
+        // Horizontal grid lines (amplitude markers)
         for (let y = 0; y <= 1; y += 0.25) {
             const yPos = y * height;
             ctx.beginPath();
@@ -280,6 +294,7 @@ export class TimeViewer {
                 ctx.fillStyle = this.textColor;
                 ctx.font = '10px Arial';
                 ctx.textAlign = 'right';
+                // Convert normalized y to amplitude value (-1 to 1)
                 ctx.fillText((1 - 2 * y).toFixed(1), 30, yPos - 2);
             }
         }
@@ -318,7 +333,7 @@ export class TimeViewer {
                 const x = ((t - t0) / duration) * width;
                 const timeStr = this.formatTime(t);
                 
-                // Only draw label if there's enough space
+                // Only draw label if there's enough space (avoid overlapping labels)
                 if (timeStr.length * 6 < width * (timeStep / duration)) {
                     ctx.fillText(timeStr, x, height - 2);
                 }
@@ -326,6 +341,7 @@ export class TimeViewer {
         }
     }
     
+    // Draw time marker at cursor position
     drawTimeMarker(time, x, height) {
         const ctx = this.ctx;
         const timeStr = this.formatTime(time);
@@ -350,6 +366,7 @@ export class TimeViewer {
         ctx.fillText(timeStr, x, height - 4);
     }
     
+    // Calculate appropriate time step for grid markers based on view duration
     calculateTimeStep(duration, width) {
         // Calculate appropriate time step based on duration and width
         const targetPixelsPerTick = 80; // Aim for a tick every ~80 pixels
@@ -374,6 +391,7 @@ export class TimeViewer {
         return Math.ceil(duration / maxTicks);
     }
     
+    // Format time in seconds to human-readable string (h:mm:ss.ss, m:ss.ss, or s.sss)
     formatTime(seconds) {
         const h = Math.floor(seconds / 3600);
         const m = Math.floor((seconds % 3600) / 60);
@@ -389,7 +407,7 @@ export class TimeViewer {
     }
 }
 
-// Draw a spectrum on the canvas with optional scaling
+// Draw a frequency spectrum on the canvas with optional scaling
 // scale: 'linear' or 'audiogram' for frequency axis scaling
 // magScale: 'linear' or 'db' for magnitude scaling
 export function drawSpectrum(canvas, magnitudes, sampleRate, scale = 'linear', magScale = 'linear') {
@@ -401,15 +419,15 @@ export function drawSpectrum(canvas, magnitudes, sampleRate, scale = 'linear', m
   ctx.clearRect(0, 0, w, h);
   if (!magnitudes || magnitudes.length === 0) return;
   
-  const N = magnitudes.length * 2;
-  const binHz = sampleRate / N;
-  const eps = 1e-12;
+  const N = magnitudes.length * 2; // FFT size (magnitudes are half due to symmetry)
+  const binHz = sampleRate / N; // Frequency resolution per bin
+  const eps = 1e-12; // Small value to avoid log(0)
   
   // Normalize magnitudes based on the selected scale
   let normVals = new Float32Array(magnitudes.length);
   
   if (magScale === 'db') {
-    // Find the maximum magnitude for dB scaling
+    // Find the maximum magnitude for dB scaling reference
     let max = eps;
     for (let i = 0; i < magnitudes.length; i++) {
       const v = magnitudes[i];
@@ -420,13 +438,13 @@ export function drawSpectrum(canvas, magnitudes, sampleRate, scale = 'linear', m
     const dyn = 80; // Dynamic range in dB
     const dbMin = dbMax - dyn;
     
-    // Convert to dB and normalize to 0-1 range
+    // Convert to dB and normalize to 0-1 range within dynamic range
     for (let i = 0; i < magnitudes.length; i++) {
       const db = 20 * Math.log10((magnitudes[i] || 0) + eps);
       normVals[i] = Math.max(0, Math.min(1, (db - dbMin) / (dbMax - dbMin)));
     }
   } else {
-    // Linear magnitude scaling
+    // Linear magnitude scaling - simple normalization
     let max = eps;
     for (let i = 0; i < magnitudes.length; i++) {
       const v = magnitudes[i];
@@ -440,19 +458,20 @@ export function drawSpectrum(canvas, magnitudes, sampleRate, scale = 'linear', m
   }
   
   // Draw the spectrum line
-  ctx.strokeStyle = "#34d399";
+  ctx.strokeStyle = "#34d399"; // Green color for spectrum
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   
   // Draw the spectrum line with the selected frequency scale
   for (let i = 0; i < magnitudes.length; i++) {
-    const f = i * binHz;
+    const f = i * binHz; // Frequency of this bin
+    // Calculate x position based on frequency scale type
     const x = scale === 'audiogram' ? 
-      audiogramX(f, sampleRate, w) : 
-      (i / (magnitudes.length - 1)) * w;
-      
-    const m = normVals[i];
-    const y = (1 - m) * h;
+      audiogramX(f, sampleRate, w) : // Logarithmic scale for audiogram
+      (i / (magnitudes.length - 1)) * w; // Linear scale
+    
+    const m = normVals[i]; // Normalized magnitude
+    const y = (1 - m) * h; // Invert y-axis (0 at top, h at bottom)
     
     if (i === 0) {
       ctx.moveTo(x, y);
@@ -464,39 +483,44 @@ export function drawSpectrum(canvas, magnitudes, sampleRate, scale = 'linear', m
   ctx.stroke();
   
   // Draw frequency axis ticks and labels based on the selected scale
-  const nyq = sampleRate / 2;
+  const nyq = sampleRate / 2; // Nyquist frequency (maximum representable)
   const baseTicks = [0,100,200,500,1000,2000,5000,10000,15000,20000].filter(f=>f<=nyq);
   ctx.save();
   ctx.strokeStyle = '#374151';
   ctx.fillStyle = '#9ca3af';
   ctx.lineWidth = 1;
-  // baseline
+  
+  // Draw baseline for frequency axis
   ctx.beginPath();
   ctx.moveTo(0, h-0.5);
   ctx.lineTo(w, h-0.5);
   ctx.stroke();
+  
   ctx.font = '10px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
+  
+  // Draw ticks and labels for each frequency
   baseTicks.forEach(f=>{
     const x = scale==='audiogram' ? audiogramX(f, sampleRate, w) : (f/nyq)*w;
-    // tick
+    // Draw tick mark
     ctx.beginPath();
     ctx.moveTo(x+0.5, h-8);
     ctx.lineTo(x+0.5, h);
     ctx.stroke();
-    // label
+    // Draw frequency label (convert to kHz for high frequencies)
     const label = (f>=1000) ? `${(f/1000)}k` : `${f}`;
     ctx.fillText(label, x, h-10);
   });
   ctx.restore();
 }
 
+// Draw a spectrogram (time-frequency representation)
 export function drawSpectrogram(canvas, spec, sampleRate){
   const ctx = canvas.getContext('2d'); 
   const w = canvas.width, h = canvas.height; 
   
-  // Clear the canvas with a light background for debugging
+  // Clear the canvas with a dark background
   ctx.fillStyle = '#1a1a1a';
   ctx.fillRect(0, 0, w, h);
   
@@ -504,11 +528,11 @@ export function drawSpectrogram(canvas, spec, sampleRate){
     return;
   }
   
-  const frames = spec.length;
-  const bins = spec[0].length;
+  const frames = spec.length; // Number of time frames
+  const bins = spec[0].length; // Number of frequency bins per frame
   
   // Compute global max magnitude safely, then derive dB range
-  let max = 1e-12;
+  let max = 1e-12; // Small initial value
   let min = Infinity;
   for (let i = 0; i < frames; i++) {
     const row = spec[i];
@@ -527,31 +551,32 @@ export function drawSpectrogram(canvas, spec, sampleRate){
   // Adjust the minimum to ensure we have a reasonable range
   const adjustedDbMin = dbMax - dynRange;
   
-  // Create image data for better performance
+  // Create image data for better performance (direct pixel manipulation)
   const img = ctx.createImageData(w, h);
   const data = img.data;
   
+  // Render each pixel of the spectrogram
   for (let x = 0; x < w; x++) {
-    // Fix: Use proper frame indexing
+    // Map x position to time frame index
     const fi = Math.min(frames - 1, Math.floor(x / w * frames));
     const row = spec[fi];
     
     for (let y = 0; y < h; y++) {
-      // Proper bin indexing: low frequencies at bottom (y increases downward)
+      // Map y position to frequency bin index (inverted: low freqs at bottom)
       const bi = Math.min(bins - 1, Math.floor((1 - y / h) * bins));
       // Convert magnitude to dB and normalize to [0,1] within dynamic range
       const vdb = 20 * Math.log10((row[bi] || 0) + eps);
       // Normalize to [0, 1] within the dynamic range
       let v = (vdb - adjustedDbMin) / dynRange;
-      // Apply a slight gamma correction to enhance visibility
+      // Apply gamma correction to enhance visibility of low amplitudes
       v = Math.pow(Math.max(0, Math.min(1, v)), 0.8);
-      const c = colorMap(v);
+      const c = colorMap(v); // Get color for this magnitude
       
-      const idx = (y * w + x) * 4;
+      const idx = (y * w + x) * 4; // Index in image data array (RGBA)
       data[idx] = c[0];     // R
       data[idx + 1] = c[1]; // G
       data[idx + 2] = c[2]; // B
-      data[idx + 3] = 255;  // A
+      data[idx + 3] = 255;  // A (fully opaque)
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -562,7 +587,7 @@ export function drawSpectrogram(canvas, spec, sampleRate){
   ctx.strokeRect(1, 1, w-2, h-2);
 }
 
-// Green color map for spectrogram
+// Green color map for spectrogram - converts magnitude to color
 function colorMap(v) {
     // Ensure v is within [0, 1] range
     v = Math.max(0, Math.min(1, v));
@@ -601,20 +626,20 @@ function colorMap(v) {
     return [r, g, b];
 }
 
-// Convert frequency to x-coordinate for audiogram display
+// Convert frequency to x-coordinate for audiogram display (logarithmic scale)
 function audiogramX(f, sr, width) {
-  // Standard audiogram frequencies (Hz)
+  // Standard audiogram frequencies (Hz) used in hearing tests
   const audiogramFreqs = [125, 250, 500, 1000, 2000, 4000, 8000, 16000];
   
-  // Convert frequency to octaves above 125Hz
+  // Convert frequency to octaves above 125Hz (logarithmic scaling)
   const minFreq = 125; // Lowest standard audiogram frequency
-  const maxFreq = Math.min(16000, sr / 2); // Cap at 16kHz or Nyquist
+  const maxFreq = Math.min(16000, sr / 2); // Cap at 16kHz or Nyquist frequency
   
   // Handle edge cases
   if (f <= minFreq) return 0;
   if (f >= maxFreq) return width;
   
-  // Convert to octaves above minFreq
+  // Convert to octaves above minFreq (log2(f/minFreq))
   const octaves = Math.log2(f / minFreq);
   const maxOctaves = Math.log2(maxFreq / minFreq);
   
