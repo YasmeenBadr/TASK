@@ -15,6 +15,9 @@ def next_pow2(n: int) -> int:
 
 def bit_reverse(x: int, bits: int) -> int:
     """Reverse the bit pattern of x using 'bits' number of bits."""
+    """ necessary for rearranging the samples in a bit-reversed indices
+      for applying FTT """
+    """ eno lw el binary number kan 011 hykhleh 110"""
     r = 0  # r will store the reversed bit pattern
     for i in range(bits):
         # Shift r left to make space, then add the i-th bit from x
@@ -33,6 +36,8 @@ def fft(real, imag):
     # ---------------------------
     # BIT-REVERSAL PERMUTATION
     # ---------------------------
+    #ba3ed trteb el samples for the FFT stages to work efficiently 
+    #3shan el itterative butterflies t work direct
     for i in range(n):
         j = bit_reverse(i, bits)  # Get bit-reversed index
         if j > i:  # Swap only once to avoid double swapping
@@ -43,22 +48,36 @@ def fft(real, imag):
     # ITERATIVE BUTTERFLY OPERATIONS
     # ---------------------------
     size = 2  # Start with smallest FFT size (2 points)
-    while size <= n:
+    #el size dh ely hnbd2 beh  w hn duplicate it l kol stage  
+    while size <= n: #hno2f lma nwsal l3dd el samples 
+        
         half = size >> 1  # Half the size for butterfly
+        #m3naha half = size/2 bs b tare2t el bitshift 3shan asr3
         theta = -2 * pi / size  # Angle step for twiddle factors
+        #the -ve sign is because we're doing fft not ifft
+        #according to e^{-j 2π k / N} 
+        #b7sb el sin wl cos 3shan a use them in twiddle without calculating them
         wmul_re = cos(theta)  # Real part of twiddle factor
         wmul_im = sin(theta)  # Imaginary part of twiddle factor
 
+
         i0 = 0  # Start index of current FFT block
         while i0 < n:
+            # el loop btkbr el block kol mra bt double el size bta3o
             wre, wim = 1.0, 0.0  # Initialize twiddle factor as 1 + 0j
+            #determine pairs (a,b) for each j 
             for j in range(half):
                 a = i0 + j  # Index of first element in butterfly
                 b = a + half  # Index of second element in butterfly
+                #elhalf de 3shan gwa kol block m7taga a3rf el 
+                #nos el awl (el elements ely httgm3)
+                #el nos el tany (el elemets ely hndrbha fel twiddle factor )
 
                 # ---------------------------
                 # COMPLEX MULTIPLICATION
                 # ---------------------------
+                #bdrb b (2nd elememt ) * twiddle factor 
+                #2bl ma agm3o  w atr7o mn a (1st element)
                 xr = real[b] * wre - imag[b] * wim  # Real part of multiplication
                 xi = real[b] * wim + imag[b] * wre  # Imaginary part
 
@@ -69,16 +88,19 @@ def fft(real, imag):
                 imag[b] = imag[a] - xi  # Update second element (imag)
                 real[a] += xr  # Update first element (real)
                 imag[a] += xi  # Update first element (imag)
-
+                # a-new =a_old + (b_old * twiddle)
                 # ---------------------------
                 # UPDATE TWIDDLE FACTOR
                 # ---------------------------
+                # ده اللي بيخلي  اول عنصر ال twiddle =1
+                #تاني عنصر ال twiddle= e^-j(2π/size 
+                #التالت: twiddle = e^-j(4π/size)
                 tmp = wre * wmul_re - wim * wmul_im  # Temporary storage
                 wim = wre * wmul_im + wim * wmul_re  # Update imaginary part
                 wre = tmp  # Update real part
 
             i0 += size  # Move to next FFT block
-        size <<= 1  # Double the size for next stage
+        size <<= 1  # Double the size for next stage --size =size*2
 
 
 def ifft(real, imag):
@@ -117,14 +139,23 @@ def stft(signal, win=1024, hop=256):
 
     start = 0  # Initial frame start
     while start + N <= length:  # Loop over frames
+        #hnloop l7d el length bta3 el signal 
+        # l kol frame hn3ml buffers of size n 3shan el fft yshtghl in place 
         re = np.zeros(N, dtype=np.float64)  # Allocate real buffer
         im = np.zeros(N, dtype=np.float64)  # Allocate imaginary buffer
         re[:] = signal[start:start+N] * w  # Apply window to signal
+        #bnakhod goz2 mn el signal b length n w ndrbo 
+        #element ny element fel w  y7otha fe matrix el real
+        #بنعمل windowing عشان نقلل ال artifacts لما نعمل fft علي اجزاء صغيرة من الsignal
         fft(re, im)  # Compute FFT
 
         frames.append(start)  # Save frame start index
+        #بيسجل رقم العينة اللي بدأ عندها ال frame 
+        #عشان نعرف كل fft يخص انهي جزء من ال original signal
         reals.append(re)  # Save FFT real part
+        #بنسجل الجزء الريل عشان نرسم ال  spectrogram 
         imags.append(im)  # Save FFT imaginary part
+        #مهم عشان ال amplitude وال  phase عشان ال reconstruction
 
         start += hop  # Move to next frame
 

@@ -244,15 +244,10 @@ def process_audio():
         import struct
         
         # Calculate how many samples we have
-        # Each sample is 2 bytes (16 bits), so divide total bytes by 2
+        # Each sample is 2 bytes (16 bits), so divide total bytes by 2 to convert no of bits to no of samples
         total_samples = len(frames) // 2
         
-        # Unpack binary data into a tuple of integers
-        # Format string breakdown:
-        #   '<'  = little-endian byte order (standard for WAV files)
-        #   'h'  = signed short (16-bit integer, range: -32768 to 32767)
-        #   'h' * total_samples = repeat 'h' for each sample
-        # Result: tuple of integers like (-1234, 5678, -2345, ...)
+       # by7wl l raw data l mtkhzna fl frames l arkam (no of samples )ashan n2dr n3mlha analysis
         samples = struct.unpack('<' + 'h' * total_samples, frames)
         
         # ========================================================================
